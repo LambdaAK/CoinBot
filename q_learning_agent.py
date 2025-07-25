@@ -9,7 +9,8 @@ import os
 
 class QLearningAgent:
     def __init__(self, state_size: int, action_size: int, learning_rate: float = 0.1, 
-                 discount_factor: float = 0.95, epsilon: float = 0.1, epsilon_decay: float = 0.995):
+                 discount_factor: float = 0.95, epsilon: float = 0.1, epsilon_decay: float = 0.995, 
+                 goal_pos: list = None):
         self.state_size = state_size
         self.action_size = action_size
         self.learning_rate = learning_rate
@@ -17,6 +18,7 @@ class QLearningAgent:
         self.epsilon = epsilon
         self.epsilon_decay = epsilon_decay
         self.epsilon_min = 0.01
+        self.goal_pos = goal_pos or [4, 4]  # Default goal position
         
         # Initialize Q-table as dictionary for sparse storage
         self.q_table = {}
@@ -67,6 +69,36 @@ class QLearningAgent:
         new_q = current_q + self.learning_rate * (reward + self.discount_factor * max_next_q - current_q)
         self.q_table[state_key][action] = new_q
     
+    def calculate_reward(self, action: int, new_pos: list, old_pos: list) -> float:
+        """
+        Calculate reward using goal-focused approach (prevents local optima)
+        Encourages reaching the goal without creating proximity traps
+        
+        Args:
+            action: Action taken
+            new_pos: New position after action
+            old_pos: Position before action
+            
+        Returns:
+            Reward value
+        """
+        # Goal reward (highest priority)
+        if new_pos == self.goal_pos:
+            return 10.0
+        
+        # Base step penalty to encourage efficiency
+        reward = -0.1
+        
+        # Small progress bonus only for moving closer (not for being close)
+        old_distance = abs(old_pos[0] - self.goal_pos[0]) + abs(old_pos[1] - self.goal_pos[1])
+        new_distance = abs(new_pos[0] - self.goal_pos[0]) + abs(new_pos[1] - self.goal_pos[1])
+        
+        # Only reward actual progress toward goal
+        if new_distance < old_distance:
+            reward += 0.1  # Small bonus for moving closer
+        
+        return reward
+    
     def decay_epsilon(self):
         """Decay exploration rate"""
         self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
@@ -90,6 +122,7 @@ class QLearningAgent:
             'epsilon_min': self.epsilon_min,
             'action_size': self.action_size,
             'state_size': self.state_size,
+            'goal_pos': self.goal_pos,
             'episode_rewards': self.episode_rewards,
             'episode_steps': self.episode_steps,
             'success_rates': self.success_rates,
@@ -126,7 +159,8 @@ class QLearningAgent:
             learning_rate=agent_data['learning_rate'],
             discount_factor=agent_data['discount_factor'],
             epsilon=agent_data['epsilon'],
-            epsilon_decay=agent_data['epsilon_decay']
+            epsilon_decay=agent_data['epsilon_decay'],
+            goal_pos=agent_data.get('goal_pos', [4, 4])  # Backward compatibility
         )
         
         # Restore agent data
@@ -147,7 +181,7 @@ class QLearningAgent:
 def train_agent(episodes: int = 1000, render_every: int = 1000, env_size: int = 5, seed: int = 42, save_every: int = 10000):
     """Train the Q-learning agent"""
     env = GridWorld(size=env_size, seed=seed)
-    agent = QLearningAgent(state_size=env_size*env_size, action_size=4)
+    agent = QLearningAgent(state_size=env_size*env_size, action_size=4, goal_pos=env.goal_pos)
     
     print("🤖 Training Q-learning agent...")
     print(f"Episodes: {episodes}")
@@ -164,13 +198,18 @@ def train_agent(episodes: int = 1000, render_every: int = 1000, env_size: int = 
         observation, info = env.reset()
         total_reward = 0
         steps = 0
+        old_pos = info['agent_pos'].copy()
         
         while True:
             # Choose action
             action = agent.get_action(observation, training=True)
             
-            # Take action
-            next_observation, reward, terminated, truncated, info = env.step(action)
+            # Take action (get environment step without using its reward)
+            next_observation, env_reward, terminated, truncated, info = env.step(action)
+            
+            # Calculate reward using agent's reward function
+            new_pos = info['agent_pos']
+            reward = agent.calculate_reward(action, new_pos, old_pos)
             
             # Update agent
             agent.update(observation, action, reward, next_observation, terminated)
@@ -178,6 +217,7 @@ def train_agent(episodes: int = 1000, render_every: int = 1000, env_size: int = 
             total_reward += reward
             steps += 1
             observation = next_observation
+            old_pos = new_pos.copy()
             
             # Render very rarely (only every 1000 episodes)
             if episode % render_every == 0:
@@ -248,6 +288,7 @@ def test_agent(agent, episodes: int = 10, env_size: int = 5, render: bool = Fals
         observation, info = env.reset()
         total_reward = 0
         steps = 0
+        old_pos = info['agent_pos'].copy()
         
         print(f"\nEpisode {episode + 1}:")
         
@@ -255,12 +296,17 @@ def test_agent(agent, episodes: int = 10, env_size: int = 5, render: bool = Fals
             # Choose action (no exploration during testing)
             action = agent.get_action(observation, training=False)
             
-            # Take action
-            next_observation, reward, terminated, truncated, info = env.step(action)
+            # Take action (get environment step without using its reward)
+            next_observation, env_reward, terminated, truncated, info = env.step(action)
+            
+            # Calculate reward using agent's reward function
+            new_pos = info['agent_pos']
+            reward = agent.calculate_reward(action, new_pos, old_pos)
             
             total_reward += reward
             steps += 1
             observation = next_observation
+            old_pos = new_pos.copy()
             
             # Render the episode only if requested
             if render:

@@ -200,8 +200,7 @@ class GridWorld:
             self.agent_pos = new_pos
             self.grid[self.agent_pos[0], self.agent_pos[1]] = 1
         
-        # Calculate reward using effective reward function
-        reward = self._calculate_reward(action, self.agent_pos, old_pos)
+        # Reward calculation is now handled by the agent
         
         # Check if goal reached
         terminated = False
@@ -217,41 +216,10 @@ class GridWorld:
             'steps': self.steps,
             'agent_pos': self.agent_pos,
             'goal_pos': self.goal_pos,
-            'action': action,
-            'reward': reward
+            'action': action
         }
         
-        return self._get_observation(), reward, terminated, truncated, info
-    
-    def _calculate_reward(self, action: int, new_pos: list, old_pos: list) -> float:
-        """
-        Calculate reward using goal-focused approach (prevents local optima)
-        Encourages reaching the goal without creating proximity traps
-        
-        Args:
-            action: Action taken
-            new_pos: New position after action
-            old_pos: Position before action
-            
-        Returns:
-            Reward value
-        """
-        # Goal reward (highest priority)
-        if new_pos == self.goal_pos:
-            return 10.0
-        
-        # Base step penalty to encourage efficiency
-        reward = -0.1
-        
-        # Small progress bonus only for moving closer (not for being close)
-        old_distance = abs(old_pos[0] - self.goal_pos[0]) + abs(old_pos[1] - self.goal_pos[1])
-        new_distance = abs(new_pos[0] - self.goal_pos[0]) + abs(new_pos[1] - self.goal_pos[1])
-        
-        # Only reward actual progress toward goal
-        if new_distance < old_distance:
-            reward += 0.1  # Small bonus for moving closer
-        
-        return reward
+        return self._get_observation(), 0.0, terminated, truncated, info
     
     def get_valid_actions(self) -> list:
         """Get list of valid actions from current position"""
