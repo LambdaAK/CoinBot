@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Deep Q-Network (DQN) Agent for Grid World with Enemy
-Uses neural networks to generalize across similar states
+Deep Q-Network (DQN) Agent for Grid World
+Uses neural networks to generalize across similar states with CUDA acceleration
 """
 
 import numpy as np
@@ -17,6 +17,25 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from grid_world import GridWorld
+
+# Import global configuration
+try:
+    from config import DEVICE, DQN_CONFIG, COLAB_CONFIG
+    from tqdm import tqdm
+except ImportError:
+    # Fallback if config not available
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    DQN_CONFIG = {
+        'learning_rate': 0.0005,
+        'gamma': 0.95,
+        'epsilon': 1.0,
+        'epsilon_min': 0.05,
+        'epsilon_decay': 0.9995,
+        'memory_size': 10000,
+        'batch_size': 64,
+        'target_update': 1000
+    }
+    COLAB_CONFIG = {'use_tqdm': True}
 
 class DQNNetwork(nn.Module):
     """Neural network for DQN agent"""
@@ -49,36 +68,37 @@ class DQNNetwork(nn.Module):
         return x
 
 class DQNAgent:
-    """Deep Q-Network agent for grid world navigation with enemy avoidance"""
+    """Deep Q-Network agent for grid world navigation with CUDA acceleration"""
     
     def __init__(self, state_size: int, action_size: int, 
-                 learning_rate: float = 0.0005, gamma: float = 0.95, 
-                 epsilon: float = 1.0, epsilon_min: float = 0.05, 
-                 epsilon_decay: float = 0.9995, memory_size: int = 10000,
-                 batch_size: int = 64, target_update: int = 1000):
+                 learning_rate: float = None, gamma: float = None, 
+                 epsilon: float = None, epsilon_min: float = None, 
+                 epsilon_decay: float = None, memory_size: int = None,
+                 batch_size: int = None, target_update: int = None):
         
+        # Use config values or provided parameters
         self.state_size = state_size
         self.action_size = action_size
-        self.learning_rate = learning_rate
-        self.gamma = gamma
-        self.epsilon = epsilon
-        self.epsilon_min = epsilon_min
-        self.epsilon_decay = epsilon_decay
-        self.memory_size = memory_size
-        self.batch_size = batch_size
-        self.target_update = target_update
+        self.learning_rate = learning_rate or DQN_CONFIG['learning_rate']
+        self.gamma = gamma or DQN_CONFIG['gamma']
+        self.epsilon = epsilon or DQN_CONFIG['epsilon']
+        self.epsilon_min = epsilon_min or DQN_CONFIG['epsilon_min']
+        self.epsilon_decay = epsilon_decay or DQN_CONFIG['epsilon_decay']
+        self.memory_size = memory_size or DQN_CONFIG['memory_size']
+        self.batch_size = batch_size or DQN_CONFIG['batch_size']
+        self.target_update = target_update or DQN_CONFIG['target_update']
         
-        # Device (GPU if available, else CPU)
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"Using device: {self.device}")
+        # Use global device configuration
+        self.device = DEVICE
+        print(f"🤖 DQN Agent using device: {self.device}")
         
         # Neural networks
         self.q_network = DQNNetwork(state_size, action_size).to(self.device)
         self.target_network = DQNNetwork(state_size, action_size).to(self.device)
-        self.optimizer = optim.Adam(self.q_network.parameters(), lr=learning_rate)
+        self.optimizer = optim.Adam(self.q_network.parameters(), lr=self.learning_rate)
         
         # Experience replay memory
-        self.memory = deque(maxlen=memory_size)
+        self.memory = deque(maxlen=self.memory_size)
         
         # Training statistics
         self.episode_rewards = []
@@ -118,7 +138,7 @@ class DQNAgent:
         if training and random.random() < self.epsilon:
             return random.randint(0, self.action_size - 1)
         
-        # Convert state to tensor
+        # Convert state to tensor and move to device
         state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
         
         # Get Q-values
@@ -137,11 +157,11 @@ class DQNAgent:
         batch = random.sample(self.memory, self.batch_size)
         states, actions, rewards, next_states, dones = zip(*batch)
         
-        # Convert to tensors
-        states = torch.FloatTensor(states).to(self.device)
+        # Convert to numpy arrays first, then to tensors and move to device
+        states = torch.FloatTensor(np.array(states)).to(self.device)
         actions = torch.LongTensor(actions).to(self.device)
         rewards = torch.FloatTensor(rewards).to(self.device)
-        next_states = torch.FloatTensor(next_states).to(self.device)
+        next_states = torch.FloatTensor(np.array(next_states)).to(self.device)
         dones = torch.BoolTensor(dones).to(self.device)
         
         # Current Q-values
@@ -265,9 +285,16 @@ class DQNAgent:
         
         return agent
 
-def train_dqn_agent(episodes: int = 10000, render_every: int = 1000, env_size: int = 5, 
-                   seed: int = 42, save_every: int = 1000):
-    """Train the DQN agent"""
+def train_dqn_agent(episodes: int = None, render_every: int = None, env_size: int = None, 
+                   seed: int = None, save_every: int = None):
+    """Train the DQN agent with CUDA acceleration"""
+    # Use config values or provided parameters
+    episodes = episodes or DQN_CONFIG['episodes']
+    render_every = render_every or DQN_CONFIG['render_every']
+    env_size = env_size or DQN_CONFIG['env_size']
+    seed = seed or DQN_CONFIG['seed']
+    save_every = save_every or DQN_CONFIG['save_every']
+    
     env = GridWorld(size=env_size, seed=seed)
     
     # Calculate state size (grid + positions)
@@ -276,7 +303,7 @@ def train_dqn_agent(episodes: int = 10000, render_every: int = 1000, env_size: i
     
     agent = DQNAgent(state_size=state_size, action_size=4)
     
-    print("🤖 Training DQN agent...")
+    print("🤖 Training DQN agent with CUDA acceleration...")
     print(f"Episodes: {episodes}")
     print(f"Learning rate: {agent.learning_rate}")
     print(f"Gamma: {agent.gamma}")
@@ -284,11 +311,21 @@ def train_dqn_agent(episodes: int = 10000, render_every: int = 1000, env_size: i
     print(f"Epsilon decay: {agent.epsilon_decay}")
     print(f"Batch size: {agent.batch_size}")
     print(f"Save every: {save_every} episodes")
+    print(f"Device: {agent.device}")
     print()
     
     success_count = 0
+    start_time = time.time()
     
-    for episode in range(episodes):
+    # Use progress bar if available and enabled
+    episode_range = range(episodes)
+    if COLAB_CONFIG.get('use_tqdm', False):
+        try:
+            episode_range = tqdm(episode_range, desc="Training DQN")
+        except ImportError:
+            pass
+    
+    for episode in episode_range:
         observation, info = env.reset()
         total_reward = 0
         steps = 0
@@ -364,11 +401,14 @@ def train_dqn_agent(episodes: int = 10000, render_every: int = 1000, env_size: i
         
         # Print progress
         if episode % 1000 == 0:  # Less frequent reporting for long training
+            elapsed_time = time.time() - start_time
             avg_reward = np.mean(agent.episode_rewards[-100:])
             avg_steps = np.mean(agent.episode_steps[-100:])
             success_rate = agent.success_rates[-1]
             avg_loss = np.mean(agent.loss_history[-100:]) if agent.loss_history else 0
-            print(f"Episode {episode}/{episodes}")
+            
+            print(f"Episode {episode}/{episodes} ({episode/episodes*100:.1f}%)")
+            print(f"  Time elapsed: {elapsed_time/3600:.1f}h")
             print(f"  Avg Reward (last 100): {avg_reward:.2f}")
             print(f"  Avg Steps (last 100): {avg_steps:.1f}")
             print(f"  Success Rate: {success_rate:.2%}")
@@ -381,6 +421,7 @@ def train_dqn_agent(episodes: int = 10000, render_every: int = 1000, env_size: i
     print(f"Final success rate: {agent.success_rates[-1]:.2%}")
     print(f"Final average reward: {np.mean(agent.episode_rewards[-100:]):.2f}")
     print(f"Final average steps: {np.mean(agent.episode_steps[-100:]):.1f}")
+    print(f"Total training time: {(time.time() - start_time)/3600:.1f} hours")
     
     return agent
 
