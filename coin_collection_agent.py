@@ -80,8 +80,8 @@ class CoinCollectionAgent:
         self.loss_history = []
         self.coins_collected_history = []
     
-    def get_state_representation(self, grid_state, agent_pos, coins, enemy_positions):
-        """Enhanced state representation for coin collection"""
+    def get_state_representation(self, grid_state, agent_pos, coins, enemy_positions, weapon_powerups=None, has_weapon=False, weapon_turns_remaining=0):
+        """Enhanced state representation for coin collection with weapon powerups"""
         size = grid_state.shape[0]
         
         # Create a comprehensive state vector
@@ -194,6 +194,38 @@ class CoinCollectionAgent:
                     # Out of bounds
                     state_vector.extend([1.0, 0.0, 0.0])  # Treat as obstacle
         
+        # 15. Weapon powerup information (4 new dimensions)
+        # Distance to nearest powerup
+        closest_powerup = None
+        closest_powerup_distance = float('inf')
+        
+        if weapon_powerups:
+            for powerup_pos in weapon_powerups:
+                distance = abs(agent_pos[0] - powerup_pos[0]) + abs(agent_pos[1] - powerup_pos[1])
+                if distance < closest_powerup_distance:
+                    closest_powerup_distance = distance
+                    closest_powerup = powerup_pos
+        
+        # If no powerups, use default values
+        if closest_powerup is None:
+            closest_powerup_distance = 2 * size  # Max distance
+            closest_powerup = [size//2, size//2]
+        
+        # Distance to nearest powerup (normalized)
+        state_vector.append(closest_powerup_distance / (2 * size))
+        
+        # Unit vector toward nearest powerup
+        powerup_dx = closest_powerup[0] - agent_pos[0]
+        powerup_dy = closest_powerup[1] - agent_pos[1]
+        powerup_mag = max(1, abs(powerup_dx) + abs(powerup_dy))
+        state_vector.extend([powerup_dx / powerup_mag, powerup_dy / powerup_mag])
+        
+        # Remaining weapon duration (normalized)
+        state_vector.append(weapon_turns_remaining / 10.0)
+        
+        # Weapon status binary
+        state_vector.append(1.0 if has_weapon else 0.0)
+        
         return np.array(state_vector, dtype=np.float32)
     
     def remember(self, state, action, reward, next_state, done):
@@ -253,14 +285,24 @@ class CoinCollectionAgent:
     def calculate_reward(self, action: int, new_pos: list, old_pos: list, 
                         coins: list, enemy_positions: list = None, 
                         enemy_collision: bool = False, coin_collected: bool = False,
+                        weapon_collected: bool = False, enemy_died: bool = False,
+                        has_weapon: bool = False, weapon_turns_remaining: int = 0,
                         steps: int = 0) -> float:
-        """Enhanced reward function for coin collection"""
+        """Enhanced reward function for coin collection with weapon powerups"""
         
         # Death penalty (immediate termination)
         if enemy_collision:
             return -50.0
         
-        # Coin collection reward (highest priority)
+        # Weapon collection reward (big reward)
+        if weapon_collected:
+            return 15.0
+        
+        # Enemy defeat reward (when armed) - higher than coin collection
+        if enemy_died:
+            return 50.0  # Increased from 10.0 - now higher than coin collection (25-44)
+        
+        # Coin collection reward
         if coin_collected:
             # Bonus for collecting coins quickly
             step_bonus = max(0, 20 - steps)
@@ -288,25 +330,39 @@ class CoinCollectionAgent:
         else:
             progress_reward = 0.0
         
-        # Multi-enemy avoidance reward
+        # Enemy interaction reward (depends on weapon status)
         enemy_reward = 0.0
         if enemy_positions:
             for enemy_pos in enemy_positions:
                 old_enemy_dist = abs(old_pos[0] - enemy_pos[0]) + abs(old_pos[1] - enemy_pos[1])
                 new_enemy_dist = abs(new_pos[0] - enemy_pos[0]) + abs(new_pos[1] - enemy_pos[1])
                 
-                # Penalty for moving toward enemy
-                if new_enemy_dist < old_enemy_dist:
-                    enemy_reward -= 0.5
-                # Small reward for moving away from enemy
-                elif new_enemy_dist > old_enemy_dist:
-                    enemy_reward += 0.2
-                
-                # Additional penalty for being very close to any enemy
-                if new_enemy_dist <= 1:
-                    enemy_reward -= 2.0  # Strong penalty for being adjacent
-                elif new_enemy_dist <= 2:
-                    enemy_reward -= 0.5  # Moderate penalty for being close
+                if has_weapon and weapon_turns_remaining > 0:
+                    # Armed: much stronger reward for approaching enemies
+                    if new_enemy_dist < old_enemy_dist:
+                        enemy_reward += 15.0  # Increased from 5.0 - much bigger reward for moving toward enemies when armed
+                    elif new_enemy_dist > old_enemy_dist:
+                        enemy_reward -= 3.0  # Increased penalty from -1.0 - stronger discouragement for moving away when armed
+                    
+                    # Stronger proximity rewards when armed
+                    if new_enemy_dist <= 1:
+                        enemy_reward += 8.0  # Increased from 2.0 - much bigger bonus for being adjacent when armed
+                    elif new_enemy_dist <= 2:
+                        enemy_reward += 3.0  # New bonus for being close when armed
+                    elif new_enemy_dist <= 3:
+                        enemy_reward += 1.0  # Small bonus for being within 3 steps when armed
+                else:
+                    # Unarmed: penalty for approaching enemies
+                    if new_enemy_dist < old_enemy_dist:
+                        enemy_reward -= 0.5
+                    elif new_enemy_dist > old_enemy_dist:
+                        enemy_reward += 0.2
+                    
+                    # Additional penalties for being close to enemies when unarmed
+                    if new_enemy_dist <= 1:
+                        enemy_reward -= 2.0  # Penalty for being adjacent when unarmed
+                    elif new_enemy_dist <= 2:
+                        enemy_reward -= 0.5  # Moderate penalty for being close when unarmed
         
         # Step penalty to encourage efficiency
         step_penalty = -0.1
@@ -402,19 +458,19 @@ class CoinCollectionAgent:
 def train_coin_collection_agent(episodes: int = None, render_every: int = 1000, 
                                env_size: int = 10, seed: int = 42, 
                                save_every: int = 1000):
-    """Train the coin collection DQN agent"""
+    """Train the coin collection DQN agent with weapon powerups"""
     
     from grid_world import GridWorld
     
     # Create environment
     env = GridWorld(size=env_size, seed=seed)
     
-    # Calculate state size based on enhanced representation
+    # Calculate state size based on enhanced representation with weapon powerups
     # 2 (agent) + 2 (closest_coin) + 2 (closest_enemy) + 1 (coin_dist) + 1 (enemy_dist) 
     # + 2 (coin_dir) + 2 (enemy_dir) + 1 (num_coins) + 1 (num_enemies) + 1 (coin_density) 
-    # + 1 (enemy_density) + 75 (5x5 local grid * 3 features)
-    # Total: 2+2+2+1+1+2+2+1+1+1+1+75 = 91
-    state_size = 91
+    # + 1 (enemy_density) + 75 (5x5 local grid * 3 features) + 4 (weapon powerup info)
+    # Total: 2+2+2+1+1+2+2+1+1+1+1+75+4 = 96
+    state_size = 96
     
     # Create agent
     agent = CoinCollectionAgent(
@@ -427,7 +483,7 @@ def train_coin_collection_agent(episodes: int = None, render_every: int = 1000,
         epsilon_min=0.01
     )
     
-    print(f"🎮 Training Coin Collection Agent")
+    print(f"🎮 Training Coin Collection Agent with Weapon Powerups")
     print(f"   Environment: {env_size}x{env_size} grid")
     print(f"   State size: {state_size}")
     print(f"   Episodes: {'Infinite' if episodes is None else episodes}")
@@ -447,7 +503,11 @@ def train_coin_collection_agent(episodes: int = None, render_every: int = 1000,
             agent_pos = info['agent_pos']
             coins = info['coins']
             enemy_positions = info.get('enemy_pos', [])
-            state = agent.get_state_representation(grid_state, agent_pos, coins, enemy_positions)
+            weapon_powerups = info.get('weapon_powerups', [])
+            has_weapon = info.get('has_weapon', False)
+            weapon_turns_remaining = info.get('weapon_turns_remaining', 0)
+            state = agent.get_state_representation(grid_state, agent_pos, coins, enemy_positions, 
+                                                 weapon_powerups, has_weapon, weapon_turns_remaining)
             old_pos = agent_pos.copy()
             
             while True:
@@ -459,14 +519,22 @@ def train_coin_collection_agent(episodes: int = None, render_every: int = 1000,
                 new_agent_pos = info['agent_pos']
                 new_coins = info['coins']
                 new_enemy_positions = info.get('enemy_pos', [])
-                next_state = agent.get_state_representation(new_grid_state, new_agent_pos, new_coins, new_enemy_positions)
+                new_weapon_powerups = info.get('weapon_powerups', [])
+                new_has_weapon = info.get('has_weapon', False)
+                new_weapon_turns_remaining = info.get('weapon_turns_remaining', 0)
+                next_state = agent.get_state_representation(new_grid_state, new_agent_pos, new_coins, 
+                                                          new_enemy_positions, new_weapon_powerups,
+                                                          new_has_weapon, new_weapon_turns_remaining)
                 
                 # Calculate reward using enhanced function
                 enemy_collision = info.get('enemy_collision', False)
                 coin_collected = info.get('coin_collected', False)
+                weapon_collected = info.get('weapon_collected', False)
+                enemy_died = info.get('enemy_died', False)
                 reward = agent.calculate_reward(action, new_agent_pos, old_pos, 
                                               new_coins, new_enemy_positions, 
-                                              enemy_collision, coin_collected, steps)
+                                              enemy_collision, coin_collected, weapon_collected,
+                                              enemy_died, new_has_weapon, new_weapon_turns_remaining, steps)
                 
                 done = terminated or truncated
                 agent.remember(state, action, reward, next_state, done)
@@ -542,13 +610,13 @@ def train_coin_collection_agent(episodes: int = None, render_every: int = 1000,
     return agent
 
 def test_coin_collection_agent(agent, episodes: int = 10, render: bool = True):
-    """Test the coin collection DQN agent"""
+    """Test the coin collection DQN agent with weapon powerups"""
     
     from grid_world import GridWorld
     
     env = GridWorld(size=10)
     
-    print(f"\n🧪 Testing Coin Collection Agent for {episodes} episodes...")
+    print(f"\n🧪 Testing Coin Collection Agent with Weapon Powerups for {episodes} episodes...")
     print("=" * 60)
     
     success_count = 0
@@ -566,7 +634,11 @@ def test_coin_collection_agent(agent, episodes: int = 10, render: bool = True):
         agent_pos = info['agent_pos']
         coins = info['coins']
         enemy_positions = info.get('enemy_pos', [])
-        state = agent.get_state_representation(grid_state, agent_pos, coins, enemy_positions)
+        weapon_powerups = info.get('weapon_powerups', [])
+        has_weapon = info.get('has_weapon', False)
+        weapon_turns_remaining = info.get('weapon_turns_remaining', 0)
+        state = agent.get_state_representation(grid_state, agent_pos, coins, enemy_positions,
+                                             weapon_powerups, has_weapon, weapon_turns_remaining)
         old_pos = agent_pos.copy()
         
         print(f"\nEpisode {episode + 1}:")
@@ -579,13 +651,21 @@ def test_coin_collection_agent(agent, episodes: int = 10, render: bool = True):
             new_agent_pos = info['agent_pos']
             new_coins = info['coins']
             new_enemy_positions = info.get('enemy_pos', [])
-            next_state = agent.get_state_representation(new_grid_state, new_agent_pos, new_coins, new_enemy_positions)
+            new_weapon_powerups = info.get('weapon_powerups', [])
+            new_has_weapon = info.get('has_weapon', False)
+            new_weapon_turns_remaining = info.get('weapon_turns_remaining', 0)
+            next_state = agent.get_state_representation(new_grid_state, new_agent_pos, new_coins,
+                                                      new_enemy_positions, new_weapon_powerups,
+                                                      new_has_weapon, new_weapon_turns_remaining)
             
             enemy_collision = info.get('enemy_collision', False)
             coin_collected = info.get('coin_collected', False)
+            weapon_collected = info.get('weapon_collected', False)
+            enemy_died = info.get('enemy_died', False)
             reward = agent.calculate_reward(action, new_agent_pos, old_pos, 
                                           new_coins, new_enemy_positions, 
-                                          enemy_collision, coin_collected, steps)
+                                          enemy_collision, coin_collected, weapon_collected,
+                                          enemy_died, new_has_weapon, new_weapon_turns_remaining, steps)
             
             total_reward += reward
             steps += 1

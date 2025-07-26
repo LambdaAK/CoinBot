@@ -356,14 +356,15 @@ class GridWorld:
                     self.grid[new_pos[0], new_pos[1]] = 5
     
     def _check_enemy_collision(self) -> bool:
-        """Check if agent is on the same position as any enemy"""
+        """Check if agent is adjacent to any enemy (within 1 cell horizontally or vertically)"""
         agent_row, agent_col = self.agent_pos
         
         for enemy_pos in self.enemy_positions:
             enemy_row, enemy_col = enemy_pos
             
-            # Check if on same position (only this should cause collision)
-            if agent_row == enemy_row and agent_col == enemy_col:
+            # Check if adjacent (4-directional, Manhattan distance = 1)
+            distance = abs(agent_row - enemy_row) + abs(agent_col - enemy_col)
+            if distance == 1:
                 return True
         
         return False
