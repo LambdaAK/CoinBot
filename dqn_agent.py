@@ -304,7 +304,7 @@ class ImprovedDQNAgent:
         return agent
 
 def train_improved_dqn_agent(episodes: int = None, render_every: int = 1000, 
-                           env_size: int = 8, seed: int = 42, 
+                           env_size: int = 10, seed: int = 42, 
                            save_every: int = 1000):
     """Train the improved DQN agent"""
     # Import GridWorld from your existing file
@@ -443,7 +443,7 @@ def test_improved_agent(agent, episodes: int = 10, render: bool = True):
     """Test the improved DQN agent"""
     from grid_world import GridWorld
     
-    env = GridWorld(size=8)
+    env = GridWorld(size=10)
     
     print(f"\n🧪 Testing improved DQN agent for {episodes} episodes...")
     
@@ -516,7 +516,7 @@ def main():
     print("=" * 50)
     
     # Train the agent
-    agent = train_improved_dqn_agent(render_every=1000, env_size=8)
+    agent = train_improved_dqn_agent(render_every=1000, env_size=10)
     
     # Save the trained agent
     agent.save("improved_dqn_agent.pkl")
