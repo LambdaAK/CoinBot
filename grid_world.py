@@ -483,69 +483,122 @@ class GridWorld:
         return int(min_distance)
     
     def render(self):
-        """Render the current state of the environment"""
+        """Render the current state of the environment with colors and ASCII icons only (no emojis)"""
         os.system('clear' if os.name == 'posix' else 'cls')
-        print(f"Grid World ({self.size}x{self.size}) - Step: {self.steps}")
-        print("=" * (self.size * 4 + 2))
         
+        # Color codes
+        colors = {
+            'reset': '\033[0m',
+            'bold': '\033[1m',
+            'red': '\033[91m',
+            'green': '\033[92m',
+            'yellow': '\033[93;1m',  # Use bright yellow for coins
+            'blue': '\033[94m',
+            'magenta': '\033[95m',
+            'cyan': '\033[96m',
+            'white': '\033[97m',
+            'gray': '\033[90m',
+        }
+        
+        # ASCII and color mappings for grid elements
+        grid_display = {
+            0: (".", colors['white']),      # Empty space
+            1: ("A", colors['green']),      # Agent
+            2: ("C", colors['yellow']),    # Coin (bright yellow)
+            3: ("X", colors['gray']),      # Obstacle
+            4: ("*", colors['magenta']),   # Reward (not used, but kept for completeness)
+            5: ("E", colors['red']),       # Enemy
+        }
+        
+        # Header
+        print(f"{colors['bold']}{colors['cyan']}╔{'═' * (self.size * 4 + 2)}╗{colors['reset']}")
+        print(f"{colors['bold']}{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['white']}Grid World ({self.size}x{self.size}) - Step: {self.steps}{colors['reset']} {colors['cyan']}║{colors['reset']}")
+        print(f"{colors['bold']}{colors['cyan']}╚{'═' * (self.size * 4 + 2)}╝{colors['reset']}")
+        
+        # Grid
         for i in range(self.size):
-            row = "|"
+            row = f"{colors['cyan']}║{colors['reset']}"
             for j in range(self.size):
                 cell_value = self.grid[i, j]
-                emoji = self.emoji_map[cell_value]
-                # Center the emoji in a fixed-width cell
-                row += f" {emoji} "
-            row += "|"
+                icon, color = grid_display[cell_value]
+                row += f" {color}{icon}{colors['reset']} "
+            row += f"{colors['cyan']}║{colors['reset']}"
             print(row)
         
-        print("=" * (self.size * 4 + 2))
-        print("Legend: A=Agent, C=Coin, X=Obstacle, E=Enemy, ·=Empty")
-        print(f"Agent Position: {self.agent_pos}")
-        print(f"Coins Remaining: {len(self.coins)}")
-        print(f"Coins Collected: {self.coins_collected}")
-        print(f"Enemy Positions: {self.enemy_positions}")
-        print(f"Number of Enemies: {len(self.enemy_positions)}")
+        # Footer
+        print(f"{colors['bold']}{colors['cyan']}╔{'═' * (self.size * 4 + 2)}╗{colors['reset']}")
+        
+        # Legend
+        print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['white']}Legend:{colors['reset']}")
+        legend_items = [
+            (f"{colors['green']}A{colors['reset']} Agent", colors['green']),
+            (f"{colors['yellow']}C{colors['reset']} Coin", colors['yellow']),  # Ensure bright yellow
+            (f"{colors['gray']}X{colors['reset']} Obstacle", colors['gray']),
+            (f"{colors['red']}E{colors['reset']} Enemy", colors['red']),
+            (f"{colors['white']}.{colors['reset']} Empty", colors['white'])
+        ]
+        legend_line = " ".join([f"{item[0]}" for item in legend_items])
+        print(f"{colors['cyan']}║{colors['reset']} {legend_line}")
+        print(f"{colors['cyan']}║{colors['reset']}")
+        
+        # Game info
+        print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['blue']}Agent Position:{colors['reset']} {colors['white']}{self.agent_pos}{colors['reset']}")
+        print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['yellow']}Coins Remaining:{colors['reset']} {colors['white']}{len(self.coins)}{colors['reset']}")
+        print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['yellow']}Coins Collected:{colors['reset']} {colors['white']}{self.coins_collected}{colors['reset']}")
+        print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['red']}Enemy Positions:{colors['reset']} {colors['white']}{self.enemy_positions}{colors['reset']}")
+        print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['red']}Number of Enemies:{colors['reset']} {colors['white']}{len(self.enemy_positions)}{colors['reset']}")
         
         # Calculate distances
         distance_to_nearest_coin = self.get_distance_to_nearest_coin()
-        
-        # Find closest enemy distance
         closest_enemy_distance = float('inf')
         for enemy_pos in self.enemy_positions:
             enemy_dist = abs(self.agent_pos[0] - enemy_pos[0]) + abs(self.agent_pos[1] - enemy_pos[1])
             closest_enemy_distance = min(closest_enemy_distance, enemy_dist)
-        
-        print(f"Distance to Nearest Coin: {distance_to_nearest_coin}")
-        print(f"Distance to Closest Enemy: {closest_enemy_distance}")
-        
-        # Warning if close to any enemy
+        print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['yellow']}Distance to Nearest Coin:{colors['reset']} {colors['white']}{distance_to_nearest_coin}{colors['reset']}")
+        print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['red']}Distance to Closest Enemy:{colors['reset']} {colors['white']}{closest_enemy_distance}{colors['reset']}")
         if closest_enemy_distance <= 2:
-            print("⚠️  WARNING: Enemy nearby!")
+            print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['yellow']}⚠️  WARNING: Enemy nearby!{colors['reset']}")
         if closest_enemy_distance <= 1:
-            print("💥 DANGER: Enemy can catch you!")
-        print(f"Valid Actions: {self.get_valid_actions()}")
+            print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['red']}💥 DANGER: Enemy can catch you!{colors['reset']}")
+        print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['blue']}Valid Actions:{colors['reset']} {colors['white']}{self.get_valid_actions()}{colors['reset']}")
+        print(f"{colors['bold']}{colors['cyan']}╚{'═' * (self.size * 4 + 2)}╝{colors['reset']}")
         print()
 
 def manual_play():
-    """Allow manual play of the environment"""
+    """Allow manual play of the environment with colored output"""
     env = GridWorld(10)
     state, info = env.reset()
     
-    print("Welcome to Grid World - Coin Collection!")
-    print("Use WASD keys to move:")
-    print("W = Up, A = Left, S = Down, D = Right")
-    print("Q = Quit")
-    print("Objective: Collect as many coins as possible while avoiding enemies!")
+    # Color codes
+    colors = {
+        'reset': '\033[0m',
+        'bold': '\033[1m',
+        'red': '\033[91m',
+        'green': '\033[92m',
+        'yellow': '\033[93m',
+        'blue': '\033[94m',
+        'magenta': '\033[95m',
+        'cyan': '\033[96m',
+        'white': '\033[97m',
+    }
+    
+    print(f"{colors['bold']}{colors['cyan']}╔{'═' * 60}╗{colors['reset']}")
+    print(f"{colors['bold']}{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['white']}Welcome to Grid World - Coin Collection!{colors['reset']} {colors['cyan']}║{colors['reset']}")
+    print(f"{colors['bold']}{colors['cyan']}║{colors['reset']} {colors['yellow']}Use WASD keys to move:{colors['reset']} {colors['cyan']}║{colors['reset']}")
+    print(f"{colors['bold']}{colors['cyan']}║{colors['reset']} {colors['white']}W = Up, A = Left, S = Down, D = Right{colors['reset']} {colors['cyan']}║{colors['reset']}")
+    print(f"{colors['bold']}{colors['cyan']}║{colors['reset']} {colors['white']}Q = Quit{colors['reset']} {colors['cyan']}║{colors['reset']}")
+    print(f"{colors['bold']}{colors['cyan']}║{colors['reset']} {colors['green']}Objective: Collect as many coins as possible while avoiding enemies!{colors['reset']} {colors['cyan']}║{colors['reset']}")
+    print(f"{colors['bold']}{colors['cyan']}╚{'═' * 60}╝{colors['reset']}")
     print()
     
     while True:
         env.render()
         
         # Get user input
-        action = input("Enter move (W/A/S/D/Q): ").upper()
+        action = input(f"{colors['bold']}{colors['blue']}Enter move (W/A/S/D/Q):{colors['reset']} ").upper()
         
         if action == 'Q':
-            print("Thanks for playing!")
+            print(f"{colors['bold']}{colors['green']}Thanks for playing!{colors['reset']}")
             break
         elif action == 'W':
             action_code = 0
@@ -556,7 +609,7 @@ def manual_play():
         elif action == 'A':
             action_code = 3
         else:
-            print("Invalid input! Use W/A/S/D to move or Q to quit.")
+            print(f"{colors['bold']}{colors['red']}Invalid input! Use W/A/S/D to move or Q to quit.{colors['reset']}")
             continue
         
         observation, reward, terminated, truncated, info = env.step(action_code)
@@ -564,14 +617,14 @@ def manual_play():
         if terminated or truncated:
             env.render()
             if info['all_coins_collected']:
-                print("🎉 Congratulations! You collected all coins!")
+                print(f"{colors['bold']}{colors['green']}🎉 Congratulations! You collected all coins!{colors['reset']}")
             elif info['enemy_collision']:
-                print("💀 Game Over! Enemy collision!")
+                print(f"{colors['bold']}{colors['red']}💀 Game Over! Enemy collision!{colors['reset']}")
             elif truncated:
-                print("⏰ Time's up! You ran out of moves.")
+                print(f"{colors['bold']}{colors['yellow']}⏰ Time's up! You ran out of moves.{colors['reset']}")
             else:
-                print("💥 Game Over!")
-            print(f"Final Score: {info['coins_collected']} coins collected!")
+                print(f"{colors['bold']}{colors['red']}💥 Game Over!{colors['reset']}")
+            print(f"{colors['bold']}{colors['yellow']}Final Score: {info['coins_collected']} coins collected!{colors['reset']}")
             break
 
 if __name__ == "__main__":
