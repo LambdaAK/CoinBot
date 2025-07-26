@@ -141,85 +141,125 @@ class GridWorld:
             self.grid[pos[0], pos[1]] = 3
     
     def _place_enemy(self):
-        """Place enemy at a safe distance from agent and goal"""
-        max_attempts = 50
-        attempts = 0
+        """Place 1-2 enemies at safe distances from agent and goal"""
+        # Randomly choose number of enemies (1-2)
+        num_enemies = random.randint(1, 2)
+        self.enemy_positions = []
         
-        while attempts < max_attempts:
-            enemy_row = random.randint(0, self.size - 1)
-            enemy_col = random.randint(0, self.size - 1)
-            enemy_pos = [enemy_row, enemy_col]
+        for enemy_id in range(num_enemies):
+            max_attempts = 50
+            attempts = 0
             
-            # Check distance from agent and goal
-            agent_dist = abs(enemy_pos[0] - self.agent_pos[0]) + abs(enemy_pos[1] - self.agent_pos[1])
-            goal_dist = abs(enemy_pos[0] - self.goal_pos[0]) + abs(enemy_pos[1] - self.goal_pos[1])
+            while attempts < max_attempts:
+                enemy_row = random.randint(0, self.size - 1)
+                enemy_col = random.randint(0, self.size - 1)
+                enemy_pos = [enemy_row, enemy_col]
+                
+                # Check distance from agent and goal
+                agent_dist = abs(enemy_pos[0] - self.agent_pos[0]) + abs(enemy_pos[1] - self.agent_pos[1])
+                goal_dist = abs(enemy_pos[0] - self.goal_pos[0]) + abs(enemy_pos[1] - self.goal_pos[1])
+                
+                # Enemy should be at least 2 steps away from agent and goal
+                # Also check distance from other enemies
+                too_close_to_other_enemy = False
+                for existing_enemy in self.enemy_positions:
+                    enemy_dist = abs(enemy_pos[0] - existing_enemy[0]) + abs(enemy_pos[1] - existing_enemy[1])
+                    if enemy_dist < 2:  # Keep enemies at least 2 steps apart
+                        too_close_to_other_enemy = True
+                        break
+                
+                if (enemy_pos != self.agent_pos and 
+                    enemy_pos != self.goal_pos and
+                    agent_dist >= 2 and 
+                    goal_dist >= 2 and
+                    not too_close_to_other_enemy):
+                    self.enemy_positions.append(enemy_pos)
+                    self.grid[enemy_pos[0], enemy_pos[1]] = 5
+                    break
+                
+                attempts += 1
             
-            # Enemy should be at least 2 steps away from agent and goal
-            if (enemy_pos != self.agent_pos and 
-                enemy_pos != self.goal_pos and
-                agent_dist >= 2 and 
-                goal_dist >= 2):
-                self.enemy_pos = enemy_pos
-                self.grid[enemy_pos[0], enemy_pos[1]] = 5
-                return
-            
-            attempts += 1
-        
-        # Fallback: place enemy in center if possible
-        center = self.size // 2
-        if ([center, center] != self.agent_pos and 
-            [center, center] != self.goal_pos):
-            self.enemy_pos = [center, center]
-            self.grid[center, center] = 5
-        else:
-            # Last resort: place somewhere random
-            self.enemy_pos = [1, 1]
-            self.grid[1, 1] = 5
+            # Fallback placement if we couldn't find a good spot
+            if attempts >= max_attempts:
+                # Try to place in a corner or edge
+                fallback_positions = [
+                    [1, 1], [1, self.size-2], [self.size-2, 1], [self.size-2, self.size-2],
+                    [0, self.size//2], [self.size//2, 0], [self.size-1, self.size//2], [self.size//2, self.size-1]
+                ]
+                
+                for pos in fallback_positions:
+                    if (pos != self.agent_pos and 
+                        pos != self.goal_pos and
+                        pos not in self.enemy_positions):
+                        self.enemy_positions.append(pos)
+                        self.grid[pos[0], pos[1]] = 5
+                        break
+                else:
+                    # Last resort: place somewhere random
+                    self.enemy_positions.append([1, 1])
+                    self.grid[1, 1] = 5
     
     def _move_enemy(self):
-        """Move enemy randomly to adjacent cell (50% chance to move)"""
-        # Only move 50% of the time
-        if random.random() < 0.5:
-            # Clear current enemy position
-            self.grid[self.enemy_pos[0], self.enemy_pos[1]] = 0
-            
-            # Get possible moves
-            possible_moves = []
-            directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]  # up, down, left, right
-            
-            for dr, dc in directions:
-                new_row = self.enemy_pos[0] + dr
-                new_col = self.enemy_pos[1] + dc
+        """Move all enemies randomly to adjacent cells (50% chance each to move)"""
+        for i, enemy_pos in enumerate(self.enemy_positions):
+            # Only move 50% of the time
+            if random.random() < 0.5:
+                # Clear current enemy position
+                self.grid[enemy_pos[0], enemy_pos[1]] = 0
                 
-                # Check bounds
-                if (0 <= new_row < self.size and 0 <= new_col < self.size):
-                    # Check if not obstacle or goal (enemy can move through agent space)
-                    if self.grid[new_row, new_col] not in [2, 3]:  # not goal or obstacle
-                        possible_moves.append([new_row, new_col])
-            
-            # If no valid moves, stay in place
-            if possible_moves:
-                self.enemy_pos = random.choice(possible_moves)
-            
-            # Place enemy in new position (may overwrite agent temporarily)
-            if self.grid[self.enemy_pos[0], self.enemy_pos[1]] == 1:
-                # Enemy moved to agent position - will be handled in collision check
-                pass
-            else:
-                self.grid[self.enemy_pos[0], self.enemy_pos[1]] = 5
+                # Get possible moves
+                possible_moves = []
+                directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]  # up, down, left, right
+                
+                for dr, dc in directions:
+                    new_row = enemy_pos[0] + dr
+                    new_col = enemy_pos[1] + dc
+                    
+                    # Check bounds
+                    if (0 <= new_row < self.size and 0 <= new_col < self.size):
+                        # Check if not obstacle or goal (enemy can move through agent space)
+                        if self.grid[new_row, new_col] not in [2, 3]:  # not goal or obstacle
+                            # Check if not too close to other enemies
+                            too_close = False
+                            for j, other_enemy in enumerate(self.enemy_positions):
+                                if i != j:  # Don't check against self
+                                    dist = abs(new_row - other_enemy[0]) + abs(new_col - other_enemy[1])
+                                    if dist < 1:  # Don't move on top of other enemies
+                                        too_close = True
+                                        break
+                            
+                            if not too_close:
+                                possible_moves.append([new_row, new_col])
+                
+                # If no valid moves, stay in place
+                if possible_moves:
+                    self.enemy_positions[i] = random.choice(possible_moves)
+                
+                # Place enemy in new position (may overwrite agent temporarily)
+                new_pos = self.enemy_positions[i]
+                if self.grid[new_pos[0], new_pos[1]] == 1:
+                    # Enemy moved to agent position - will be handled in collision check
+                    pass
+                else:
+                    self.grid[new_pos[0], new_pos[1]] = 5
     
     def _check_enemy_collision(self) -> bool:
-        """Check if agent is adjacent to or on enemy"""
+        """Check if agent is adjacent to or on any enemy"""
         agent_row, agent_col = self.agent_pos
-        enemy_row, enemy_col = self.enemy_pos
         
-        # Check if on same position
-        if agent_row == enemy_row and agent_col == enemy_col:
-            return True
+        for enemy_pos in self.enemy_positions:
+            enemy_row, enemy_col = enemy_pos
+            
+            # Check if on same position
+            if agent_row == enemy_row and agent_col == enemy_col:
+                return True
+            
+            # Check if adjacent (4-directional)
+            distance = abs(agent_row - enemy_row) + abs(agent_col - enemy_col)
+            if distance == 1:
+                return True
         
-        # Check if adjacent (4-directional)
-        distance = abs(agent_row - enemy_row) + abs(agent_col - enemy_col)
-        return distance == 1
+        return False
     
     def reset(self, seed: Optional[int] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
         """
@@ -244,7 +284,7 @@ class GridWorld:
         info = {
             'agent_pos': self.agent_pos,
             'goal_pos': self.goal_pos,
-            'enemy_pos': self.enemy_pos,
+            'enemy_pos': self.enemy_positions,
             'steps': self.steps,
             'goal_reached': goal_reached,
             'enemy_collision': enemy_collision
@@ -299,9 +339,10 @@ class GridWorld:
         # Move enemy after agent moves
         self._move_enemy()
         
-        # Update grid display (enemy might overwrite agent temporarily)
-        if self.enemy_pos != self.agent_pos:
-            self.grid[self.enemy_pos[0], self.enemy_pos[1]] = 5
+        # Update grid display for all enemies
+        for enemy_pos in self.enemy_positions:
+            if enemy_pos != self.agent_pos:
+                self.grid[enemy_pos[0], enemy_pos[1]] = 5
         
         # Always ensure agent is visible on grid
         self.grid[self.agent_pos[0], self.agent_pos[1]] = 1
@@ -324,7 +365,7 @@ class GridWorld:
             'steps': self.steps,
             'agent_pos': self.agent_pos,
             'goal_pos': self.goal_pos,
-            'enemy_pos': self.enemy_pos,
+            'enemy_pos': self.enemy_positions,
             'enemy_collision': enemy_collision,
             'goal_reached': goal_reached,
             'action': action
@@ -375,26 +416,32 @@ class GridWorld:
         print("Legend: A=Agent, G=Goal, X=Obstacle, E=Enemy, ·=Empty")
         print(f"Agent Position: {self.agent_pos}")
         print(f"Goal Position: {self.goal_pos}")
-        print(f"Enemy Position: {self.enemy_pos}")
+        print(f"Enemy Positions: {self.enemy_positions}")
+        print(f"Number of Enemies: {len(self.enemy_positions)}")
         
         # Calculate distances
         distance_to_goal = abs(self.agent_pos[0] - self.goal_pos[0]) + abs(self.agent_pos[1] - self.goal_pos[1])
-        distance_to_enemy = abs(self.agent_pos[0] - self.enemy_pos[0]) + abs(self.agent_pos[1] - self.enemy_pos[1])
+        
+        # Find closest enemy distance
+        closest_enemy_distance = float('inf')
+        for enemy_pos in self.enemy_positions:
+            enemy_dist = abs(self.agent_pos[0] - enemy_pos[0]) + abs(self.agent_pos[1] - enemy_pos[1])
+            closest_enemy_distance = min(closest_enemy_distance, enemy_dist)
         
         print(f"Distance to Goal: {distance_to_goal}")
-        print(f"Distance to Enemy: {distance_to_enemy}")
+        print(f"Distance to Closest Enemy: {closest_enemy_distance}")
         
-        # Warning if close to enemy
-        if distance_to_enemy <= 2:
+        # Warning if close to any enemy
+        if closest_enemy_distance <= 2:
             print("⚠️  WARNING: Enemy nearby!")
-        if distance_to_enemy <= 1:
+        if closest_enemy_distance <= 1:
             print("💥 DANGER: Enemy can catch you!")
         print(f"Valid Actions: {self.get_valid_actions()}")
         print()
 
 def manual_play():
     """Allow manual play of the environment"""
-    env = GridWorld(5)
+    env = GridWorld(10)
     state, info = env.reset()
     
     print("Welcome to Grid World!")

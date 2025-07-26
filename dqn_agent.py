@@ -82,8 +82,8 @@ class ImprovedDQNAgent:
         # Update target network
         self.update_target_network()
         
-    def get_state_representation(self, grid_state, agent_pos, goal_pos, enemy_pos):
-        """Improved state representation with more informative features"""
+    def get_state_representation(self, grid_state, agent_pos, goal_pos, enemy_positions):
+        """Improved state representation with multiple enemies - uses closest enemy for key features"""
         size = grid_state.shape[0]
         
         # Create a more informative state representation
@@ -95,30 +95,49 @@ class ImprovedDQNAgent:
         # 2. Goal position (normalized)
         state_vector.extend([goal_pos[0] / size, goal_pos[1] / size])
         
-        # 3. Enemy position (normalized)
-        state_vector.extend([enemy_pos[0] / size, enemy_pos[1] / size])
+        # 3. Find closest enemy
+        closest_enemy = None
+        closest_distance = float('inf')
         
-        # 4. Distance to goal (normalized)
+        if enemy_positions:
+            for enemy_pos in enemy_positions:
+                distance = abs(agent_pos[0] - enemy_pos[0]) + abs(agent_pos[1] - enemy_pos[1])
+                if distance < closest_distance:
+                    closest_distance = distance
+                    closest_enemy = enemy_pos
+        
+        # If no enemies, use a default position
+        if closest_enemy is None:
+            closest_enemy = [size//2, size//2]
+            closest_distance = abs(agent_pos[0] - closest_enemy[0]) + abs(agent_pos[1] - closest_enemy[1])
+        
+        # 4. Closest enemy position (normalized)
+        state_vector.extend([closest_enemy[0] / size, closest_enemy[1] / size])
+        
+        # 5. Distance to goal (normalized)
         goal_distance = abs(agent_pos[0] - goal_pos[0]) + abs(agent_pos[1] - goal_pos[1])
         state_vector.append(goal_distance / (2 * size))
         
-        # 5. Distance to enemy (normalized)
-        enemy_distance = abs(agent_pos[0] - enemy_pos[0]) + abs(agent_pos[1] - enemy_pos[1])
-        state_vector.append(enemy_distance / (2 * size))
+        # 6. Distance to closest enemy (normalized)
+        state_vector.append(closest_distance / (2 * size))
         
-        # 6. Direction to goal (unit vectors)
+        # 7. Direction to goal (unit vectors)
         goal_dx = goal_pos[0] - agent_pos[0]
         goal_dy = goal_pos[1] - agent_pos[1]
         goal_mag = max(1, abs(goal_dx) + abs(goal_dy))
         state_vector.extend([goal_dx / goal_mag, goal_dy / goal_mag])
         
-        # 7. Direction to enemy (unit vectors)
-        enemy_dx = enemy_pos[0] - agent_pos[0]
-        enemy_dy = enemy_pos[1] - agent_pos[1]
+        # 8. Direction to closest enemy (unit vectors)
+        enemy_dx = closest_enemy[0] - agent_pos[0]
+        enemy_dy = closest_enemy[1] - agent_pos[1]
         enemy_mag = max(1, abs(enemy_dx) + abs(enemy_dy))
         state_vector.extend([enemy_dx / enemy_mag, enemy_dy / enemy_mag])
         
-        # 8. Local grid information (3x3 around agent)
+        # 9. Number of enemies (normalized)
+        num_enemies = len(enemy_positions) if enemy_positions else 0
+        state_vector.append(num_enemies / 5.0)  # Normalize by max expected enemies
+        
+        # 10. Local grid information (3x3 around agent)
         for dx in [-1, 0, 1]:
             for dy in [-1, 0, 1]:
                 x, y = agent_pos[0] + dx, agent_pos[1] + dy
@@ -127,8 +146,9 @@ class ImprovedDQNAgent:
                     state_vector.append(1.0 if grid_state[x, y] == 3 else 0.0)
                     # Goal presence
                     state_vector.append(1.0 if [x, y] == goal_pos else 0.0)
-                    # Enemy presence
-                    state_vector.append(1.0 if [x, y] == enemy_pos else 0.0)
+                    # Enemy presence (any enemy)
+                    has_enemy = any([x, y] == enemy_pos for enemy_pos in enemy_positions) if enemy_positions else False
+                    state_vector.append(1.0 if has_enemy else 0.0)
                 else:
                     # Out of bounds
                     state_vector.extend([1.0, 0.0, 0.0])  # Treat as obstacle
@@ -186,9 +206,9 @@ class ImprovedDQNAgent:
         self.target_network.load_state_dict(self.q_network.state_dict())
     
     def calculate_reward(self, action: int, new_pos: list, old_pos: list, 
-                        goal_pos: list, enemy_pos: list = None, 
-                        enemy_collision: bool = False, steps: int = 0) -> float:
-        """Improved reward function with better learning signals"""
+                         goal_pos: list, enemy_positions: list = None, 
+                         enemy_collision: bool = False, steps: int = 0) -> float:
+        """Improved reward function with multi-enemy avoidance"""
         
         # Death penalty (immediate termination)
         if enemy_collision:
@@ -207,22 +227,25 @@ class ImprovedDQNAgent:
         # Progress reward - encourage moving toward goal
         progress_reward = (old_goal_dist - new_goal_dist) * 2.0
         
-        # Enemy avoidance reward
+        # Multi-enemy avoidance reward
         enemy_reward = 0.0
-        if enemy_pos:
-            old_enemy_dist = abs(old_pos[0] - enemy_pos[0]) + abs(old_pos[1] - enemy_pos[1])
-            new_enemy_dist = abs(new_pos[0] - enemy_pos[0]) + abs(new_pos[1] - enemy_pos[1])
-            
-            # Penalty for getting closer to enemy
-            if new_enemy_dist < old_enemy_dist:
-                enemy_reward = -1.0
-            # Small reward for moving away from enemy
-            elif new_enemy_dist > old_enemy_dist:
-                enemy_reward = 0.5
-            
-            # Additional penalty for being very close to enemy
-            if new_enemy_dist <= 2:
-                enemy_reward -= 2.0
+        if enemy_positions:
+            for enemy_pos in enemy_positions:
+                old_enemy_dist = abs(old_pos[0] - enemy_pos[0]) + abs(old_pos[1] - enemy_pos[1])
+                new_enemy_dist = abs(new_pos[0] - enemy_pos[0]) + abs(new_pos[1] - enemy_pos[1])
+                
+                # Penalty for moving toward enemy
+                if new_enemy_dist < old_enemy_dist:
+                    enemy_reward -= 1.0
+                # Small reward for moving away from enemy
+                elif new_enemy_dist > old_enemy_dist:
+                    enemy_reward += 0.5
+                
+                # Additional penalty for being very close to any enemy
+                if new_enemy_dist <= 2:
+                    enemy_reward -= 2.0
+                elif new_enemy_dist <= 3:
+                    enemy_reward -= 0.5
         
         # Step penalty to encourage efficiency
         step_penalty = -0.1
@@ -313,9 +336,9 @@ def train_improved_dqn_agent(episodes: int = None, render_every: int = 1000,
     env = GridWorld(size=env_size, seed=seed)
     
     # Calculate state size based on improved representation
-    # 2 (agent) + 2 (goal) + 2 (enemy) + 1 (goal_dist) + 1 (enemy_dist) 
-    # + 2 (goal_dir) + 2 (enemy_dir) + 27 (3x3 local grid * 3 features)
-    state_size = 39
+    # 2 (agent) + 2 (goal) + 2 (closest_enemy) + 1 (goal_dist) + 1 (enemy_dist) 
+    # + 2 (goal_dir) + 2 (enemy_dir) + 1 (num_enemies) + 27 (3x3 local grid * 3 features)
+    state_size = 40
     
     agent = ImprovedDQNAgent(state_size=state_size, action_size=4)
     
@@ -340,8 +363,8 @@ def train_improved_dqn_agent(episodes: int = None, render_every: int = 1000,
             grid_state = env.grid
             agent_pos = info['agent_pos']
             goal_pos = info['goal_pos']
-            enemy_pos = info.get('enemy_pos', [env.size//2, env.size//2])  # Fallback if not in info
-            state = agent.get_state_representation(grid_state, agent_pos, goal_pos, enemy_pos)
+            enemy_positions = info.get('enemy_pos', [[env.size//2, env.size//2]])  # List of enemy positions
+            state = agent.get_state_representation(grid_state, agent_pos, goal_pos, enemy_positions)
             old_pos = agent_pos.copy()
             
             while True:
@@ -352,13 +375,13 @@ def train_improved_dqn_agent(episodes: int = None, render_every: int = 1000,
                 new_grid_state = env.grid
                 new_agent_pos = info['agent_pos']
                 new_goal_pos = info['goal_pos']
-                new_enemy_pos = info.get('enemy_pos', [env.size//2, env.size//2])  # Fallback if not in info
-                next_state = agent.get_state_representation(new_grid_state, new_agent_pos, new_goal_pos, new_enemy_pos)
+                new_enemy_positions = info.get('enemy_pos', [[env.size//2, env.size//2]])  # List of enemy positions
+                next_state = agent.get_state_representation(new_grid_state, new_agent_pos, new_goal_pos, new_enemy_positions)
                 
-                # Calculate reward using improved function
+                # Calculate reward using improved function with all enemies
                 enemy_collision = info.get('enemy_collision', False)
                 reward = agent.calculate_reward(action, new_agent_pos, old_pos, 
-                                               new_goal_pos, new_enemy_pos, 
+                                               new_goal_pos, new_enemy_positions, 
                                                enemy_collision, steps)
                 
                 done = terminated or truncated
@@ -459,8 +482,8 @@ def test_improved_agent(agent, episodes: int = 10, render: bool = True):
         grid_state = env.grid
         agent_pos = info['agent_pos']
         goal_pos = info['goal_pos']
-        enemy_pos = info.get('enemy_pos', [env.size//2, env.size//2])  # Fallback if not in info
-        state = agent.get_state_representation(grid_state, agent_pos, goal_pos, enemy_pos)
+        enemy_positions = info.get('enemy_pos', [[env.size//2, env.size//2]])  # List of enemy positions
+        state = agent.get_state_representation(grid_state, agent_pos, goal_pos, enemy_positions)
         old_pos = agent_pos.copy()
         
         print(f"\nEpisode {episode + 1}:")
@@ -472,12 +495,12 @@ def test_improved_agent(agent, episodes: int = 10, render: bool = True):
             new_grid_state = env.grid
             new_agent_pos = info['agent_pos']
             new_goal_pos = info['goal_pos']
-            new_enemy_pos = info.get('enemy_pos', [env.size//2, env.size//2])  # Fallback if not in info
-            next_state = agent.get_state_representation(new_grid_state, new_agent_pos, new_goal_pos, new_enemy_pos)
+            new_enemy_positions = info.get('enemy_pos', [[env.size//2, env.size//2]])  # List of enemy positions
+            next_state = agent.get_state_representation(new_grid_state, new_agent_pos, new_goal_pos, new_enemy_positions)
             
             enemy_collision = info.get('enemy_collision', False)
             reward = agent.calculate_reward(action, new_agent_pos, old_pos, 
-                                          new_goal_pos, new_enemy_pos, 
+                                          new_goal_pos, new_enemy_positions, 
                                           enemy_collision, steps)
             
             total_reward += reward
