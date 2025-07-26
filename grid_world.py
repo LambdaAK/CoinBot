@@ -9,12 +9,13 @@ class GridWorld:
         self.size = size
         self.grid = np.zeros((size, size), dtype=int)
         self.agent_pos = [0, 0]  # Start at top-left
-        self.goal_pos = [size-1, size-1]  # Goal at bottom-right
-        self.enemy_pos = [0, 0]  # Enemy position
+        self.coins = []  # List of coin positions
+        self.enemy_positions = []  # Enemy positions
         self.obstacles = []
         self.steps = 0
         self.max_steps = max_steps
         self.seed = seed
+        self.coins_collected = 0  # Track collected coins
         
         # RL environment properties
         self.action_space = 4  # 0=up, 1=right, 2=down, 3=left
@@ -25,7 +26,7 @@ class GridWorld:
         self.emoji_map = {
             0: "·",  # Empty space
             1: "A",  # Agent
-            2: "G",  # Goal
+            2: "C",  # Coin
             3: "X",  # Obstacle
             4: "★",  # Reward
             5: "E",  # Enemy
@@ -39,16 +40,16 @@ class GridWorld:
         # Initialize the grid
         self._initialize_grid()
     
-    def _is_goal_reachable(self) -> bool:
-        """Check if goal is reachable from start using DFS"""
+    def _is_coin_reachable(self) -> bool:
+        """Check if at least one coin is reachable from start using DFS"""
         visited = set()
         stack = [(self.agent_pos[0], self.agent_pos[1])]
         
         while stack:
             row, col = stack.pop()
             
-            # Check if we reached the goal
-            if (row, col) == (self.goal_pos[0], self.goal_pos[1]):
+            # Check if we reached any coin
+            if [row, col] in self.coins:
                 return True
             
             # Mark as visited
@@ -71,17 +72,17 @@ class GridWorld:
         return False
     
     def _initialize_grid(self):
-        """Initialize the grid with agent, goal, enemy, and some obstacles"""
+        """Initialize the grid with agent, coins, enemies, and some obstacles"""
         self.grid = np.zeros((self.size, self.size), dtype=int)
         
         # Place agent
         self.grid[self.agent_pos[0], self.agent_pos[1]] = 1
         
-        # Place goal
-        self.grid[self.goal_pos[0], self.goal_pos[1]] = 2
+        # Place coins at random positions
+        self._place_coins()
         
-        # Place enemy at random position (not too close to agent or goal)
-        self._place_enemy()
+        # Place enemies at random positions (not too close to agent or coins)
+        self._place_enemies()
         
         # Add obstacles with DFS validation
         max_attempts = 100  # Prevent infinite loops
@@ -92,8 +93,10 @@ class GridWorld:
             self.obstacles = []
             self.grid = np.zeros((self.size, self.size), dtype=int)
             self.grid[self.agent_pos[0], self.agent_pos[1]] = 1
-            self.grid[self.goal_pos[0], self.goal_pos[1]] = 2
-            self._place_enemy()
+            
+            # Re-place coins and enemies
+            self._place_coins()
+            self._place_enemies()
             
             # Add random obstacles
             num_obstacles = random.randint(2, 4)
@@ -101,15 +104,15 @@ class GridWorld:
                 while True:
                     obstacle_pos = [random.randint(0, self.size-1), random.randint(0, self.size-1)]
                     if (obstacle_pos != self.agent_pos and 
-                        obstacle_pos != self.goal_pos and
-                        obstacle_pos != self.enemy_pos and 
+                        obstacle_pos not in self.coins and
+                        obstacle_pos not in self.enemy_positions and 
                         obstacle_pos not in self.obstacles):
                         self.obstacles.append(obstacle_pos)
                         self.grid[obstacle_pos[0], obstacle_pos[1]] = 3
                         break
             
-            # Check if goal is reachable
-            if self._is_goal_reachable():
+            # Check if at least one coin is reachable
+            if self._is_coin_reachable():
                 break
             
             attempts += 1
@@ -119,12 +122,14 @@ class GridWorld:
             self._create_simple_path()
     
     def _create_simple_path(self):
-        """Create a simple guaranteed path from start to goal"""
+        """Create a simple guaranteed path with coins"""
         self.obstacles = []
         self.grid = np.zeros((self.size, self.size), dtype=int)
         self.grid[self.agent_pos[0], self.agent_pos[1]] = 1
-        self.grid[self.goal_pos[0], self.goal_pos[1]] = 2
-        self._place_enemy()
+        
+        # Re-place coins and enemies
+        self._place_coins()
+        self._place_enemies()
         
         # Add minimal obstacles that don't block the path
         # For a 5x5 grid, we can add obstacles in corners or edges
@@ -137,11 +142,66 @@ class GridWorld:
         selected_obstacles = random.sample(safe_positions, num_obstacles)
         
         for pos in selected_obstacles:
-            self.obstacles.append(pos)
-            self.grid[pos[0], pos[1]] = 3
+            if pos not in self.coins and pos not in self.enemy_positions:
+                self.obstacles.append(pos)
+                self.grid[pos[0], pos[1]] = 3
     
-    def _place_enemy(self):
-        """Place 1-2 enemies at safe distances from agent and goal"""
+    def _place_coins(self):
+        """Place 3-6 coins at random positions"""
+        num_coins = random.randint(3, 6)
+        self.coins = []
+        
+        for _ in range(num_coins):
+            max_attempts = 50
+            attempts = 0
+            
+            while attempts < max_attempts:
+                coin_row = random.randint(0, self.size - 1)
+                coin_col = random.randint(0, self.size - 1)
+                coin_pos = [coin_row, coin_col]
+                
+                # Check distance from agent
+                agent_dist = abs(coin_pos[0] - self.agent_pos[0]) + abs(coin_pos[1] - self.agent_pos[1])
+                
+                # Coin should be at least 1 step away from agent
+                # Also check distance from other coins
+                too_close_to_other_coin = False
+                for existing_coin in self.coins:
+                    coin_dist = abs(coin_pos[0] - existing_coin[0]) + abs(coin_pos[1] - existing_coin[1])
+                    if coin_dist < 1:  # Keep coins at least 1 step apart
+                        too_close_to_other_coin = True
+                        break
+                
+                if (coin_pos != self.agent_pos and 
+                    agent_dist >= 1 and
+                    not too_close_to_other_coin):
+                    self.coins.append(coin_pos)
+                    self.grid[coin_pos[0], coin_pos[1]] = 2
+                    break
+                
+                attempts += 1
+            
+            # Fallback placement if we couldn't find a good spot
+            if attempts >= max_attempts:
+                # Try to place in a corner or edge
+                fallback_positions = [
+                    [1, 1], [1, self.size-2], [self.size-2, 1], [self.size-2, self.size-2],
+                    [0, self.size//2], [self.size//2, 0], [self.size-1, self.size//2], [self.size//2, self.size-1]
+                ]
+                
+                for pos in fallback_positions:
+                    if (pos != self.agent_pos and 
+                        pos not in self.coins):
+                        self.coins.append(pos)
+                        self.grid[pos[0], pos[1]] = 2
+                        break
+                else:
+                    # Last resort: place somewhere random
+                    self.coins.append([1, 1])
+                    self.grid[1, 1] = 2
+    
+    def _place_enemies(self):
+        """Place 1-2 enemies at safe distances from agent and coins"""
         # Randomly choose number of enemies (1-2)
         num_enemies = random.randint(1, 2)
         self.enemy_positions = []
@@ -155,11 +215,10 @@ class GridWorld:
                 enemy_col = random.randint(0, self.size - 1)
                 enemy_pos = [enemy_row, enemy_col]
                 
-                # Check distance from agent and goal
+                # Check distance from agent and coins
                 agent_dist = abs(enemy_pos[0] - self.agent_pos[0]) + abs(enemy_pos[1] - self.agent_pos[1])
-                goal_dist = abs(enemy_pos[0] - self.goal_pos[0]) + abs(enemy_pos[1] - self.goal_pos[1])
                 
-                # Enemy should be at least 2 steps away from agent and goal
+                # Enemy should be at least 2 steps away from agent
                 # Also check distance from other enemies
                 too_close_to_other_enemy = False
                 for existing_enemy in self.enemy_positions:
@@ -169,9 +228,8 @@ class GridWorld:
                         break
                 
                 if (enemy_pos != self.agent_pos and 
-                    enemy_pos != self.goal_pos and
-                    agent_dist >= 2 and 
-                    goal_dist >= 2 and
+                    enemy_pos not in self.coins and
+                    agent_dist >= 2 and
                     not too_close_to_other_enemy):
                     self.enemy_positions.append(enemy_pos)
                     self.grid[enemy_pos[0], enemy_pos[1]] = 5
@@ -189,7 +247,7 @@ class GridWorld:
                 
                 for pos in fallback_positions:
                     if (pos != self.agent_pos and 
-                        pos != self.goal_pos and
+                        pos not in self.coins and
                         pos not in self.enemy_positions):
                         self.enemy_positions.append(pos)
                         self.grid[pos[0], pos[1]] = 5
@@ -199,7 +257,7 @@ class GridWorld:
                     self.enemy_positions.append([1, 1])
                     self.grid[1, 1] = 5
     
-    def _move_enemy(self):
+    def _move_enemies(self):
         """Move all enemies randomly to adjacent cells (50% chance each to move)"""
         for i, enemy_pos in enumerate(self.enemy_positions):
             # Only move 50% of the time
@@ -217,8 +275,8 @@ class GridWorld:
                     
                     # Check bounds
                     if (0 <= new_row < self.size and 0 <= new_col < self.size):
-                        # Check if not obstacle or goal (enemy can move through agent space)
-                        if self.grid[new_row, new_col] not in [2, 3]:  # not goal or obstacle
+                        # Check if not obstacle or coin (enemy can move through agent space)
+                        if self.grid[new_row, new_col] not in [2, 3]:  # not coin or obstacle
                             # Check if not too close to other enemies
                             too_close = False
                             for j, other_enemy in enumerate(self.enemy_positions):
@@ -261,6 +319,19 @@ class GridWorld:
         
         return False
     
+    def _check_coin_collection(self) -> bool:
+        """Check if agent collected a coin"""
+        agent_row, agent_col = self.agent_pos
+        
+        for i, coin_pos in enumerate(self.coins):
+            if coin_pos[0] == agent_row and coin_pos[1] == agent_col:
+                # Remove coin
+                self.coins.pop(i)
+                self.coins_collected += 1
+                return True
+        
+        return False
+    
     def reset(self, seed: Optional[int] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
         """
         Reset the environment to initial state
@@ -274,19 +345,20 @@ class GridWorld:
             
         self.agent_pos = [0, 0]
         self.steps = 0
+        self.coins_collected = 0
         self.obstacles = []
         self._initialize_grid()
         
         # Check initial conditions
-        goal_reached = (self.agent_pos == self.goal_pos)
         enemy_collision = self._check_enemy_collision()
         
         info = {
             'agent_pos': self.agent_pos,
-            'goal_pos': self.goal_pos,
+            'coins': self.coins,
             'enemy_pos': self.enemy_positions,
+            'coins_collected': self.coins_collected,
+            'total_coins': len(self.coins),
             'steps': self.steps,
-            'goal_reached': goal_reached,
             'enemy_collision': enemy_collision
         }
         
@@ -336,8 +408,11 @@ class GridWorld:
             self.agent_pos = new_pos
             self.grid[self.agent_pos[0], self.agent_pos[1]] = 1
         
-        # Move enemy after agent moves
-        self._move_enemy()
+        # Check for coin collection
+        coin_collected = self._check_coin_collection()
+        
+        # Move enemies after agent moves
+        self._move_enemies()
         
         # Update grid display for all enemies
         for enemy_pos in self.enemy_positions:
@@ -350,10 +425,10 @@ class GridWorld:
         # Check for enemy collision (game over condition)
         enemy_collision = self._check_enemy_collision()
         
-        # Check if goal reached or enemy collision
+        # Check if all coins collected or enemy collision
         terminated = False
-        goal_reached = (self.agent_pos == self.goal_pos)
-        if goal_reached or enemy_collision:
+        all_coins_collected = len(self.coins) == 0
+        if all_coins_collected or enemy_collision:
             terminated = True
         
         # Check if max steps reached
@@ -364,10 +439,13 @@ class GridWorld:
         info = {
             'steps': self.steps,
             'agent_pos': self.agent_pos,
-            'goal_pos': self.goal_pos,
+            'coins': self.coins,
             'enemy_pos': self.enemy_positions,
+            'coins_collected': self.coins_collected,
+            'total_coins': len(self.coins) + self.coins_collected,
+            'coin_collected': coin_collected,
             'enemy_collision': enemy_collision,
-            'goal_reached': goal_reached,
+            'all_coins_collected': all_coins_collected,
             'action': action
         }
         
@@ -392,9 +470,17 @@ class GridWorld:
         
         return valid_actions
     
-    def get_distance_to_goal(self) -> int:
-        """Get Manhattan distance from agent to goal"""
-        return abs(self.agent_pos[0] - self.goal_pos[0]) + abs(self.agent_pos[1] - self.goal_pos[1])
+    def get_distance_to_nearest_coin(self) -> int:
+        """Get Manhattan distance from agent to nearest coin"""
+        if not self.coins:
+            return 0
+        
+        min_distance = float('inf')
+        for coin_pos in self.coins:
+            distance = abs(self.agent_pos[0] - coin_pos[0]) + abs(self.agent_pos[1] - coin_pos[1])
+            min_distance = min(min_distance, distance)
+        
+        return int(min_distance)
     
     def render(self):
         """Render the current state of the environment"""
@@ -413,14 +499,15 @@ class GridWorld:
             print(row)
         
         print("=" * (self.size * 4 + 2))
-        print("Legend: A=Agent, G=Goal, X=Obstacle, E=Enemy, ·=Empty")
+        print("Legend: A=Agent, C=Coin, X=Obstacle, E=Enemy, ·=Empty")
         print(f"Agent Position: {self.agent_pos}")
-        print(f"Goal Position: {self.goal_pos}")
+        print(f"Coins Remaining: {len(self.coins)}")
+        print(f"Coins Collected: {self.coins_collected}")
         print(f"Enemy Positions: {self.enemy_positions}")
         print(f"Number of Enemies: {len(self.enemy_positions)}")
         
         # Calculate distances
-        distance_to_goal = abs(self.agent_pos[0] - self.goal_pos[0]) + abs(self.agent_pos[1] - self.goal_pos[1])
+        distance_to_nearest_coin = self.get_distance_to_nearest_coin()
         
         # Find closest enemy distance
         closest_enemy_distance = float('inf')
@@ -428,7 +515,7 @@ class GridWorld:
             enemy_dist = abs(self.agent_pos[0] - enemy_pos[0]) + abs(self.agent_pos[1] - enemy_pos[1])
             closest_enemy_distance = min(closest_enemy_distance, enemy_dist)
         
-        print(f"Distance to Goal: {distance_to_goal}")
+        print(f"Distance to Nearest Coin: {distance_to_nearest_coin}")
         print(f"Distance to Closest Enemy: {closest_enemy_distance}")
         
         # Warning if close to any enemy
@@ -444,10 +531,11 @@ def manual_play():
     env = GridWorld(10)
     state, info = env.reset()
     
-    print("Welcome to Grid World!")
+    print("Welcome to Grid World - Coin Collection!")
     print("Use WASD keys to move:")
     print("W = Up, A = Left, S = Down, D = Right")
     print("Q = Quit")
+    print("Objective: Collect as many coins as possible while avoiding enemies!")
     print()
     
     while True:
@@ -475,12 +563,15 @@ def manual_play():
         
         if terminated or truncated:
             env.render()
-            if terminated and info['agent_pos'] == info['goal_pos']:
-                print("🎉 Congratulations! You reached the goal!")
+            if info['all_coins_collected']:
+                print("🎉 Congratulations! You collected all coins!")
+            elif info['enemy_collision']:
+                print("💀 Game Over! Enemy collision!")
             elif truncated:
                 print("⏰ Time's up! You ran out of moves.")
             else:
                 print("💥 Game Over!")
+            print(f"Final Score: {info['coins_collected']} coins collected!")
             break
 
 if __name__ == "__main__":
