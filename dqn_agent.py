@@ -303,8 +303,8 @@ class ImprovedDQNAgent:
         print(f"✅ Improved DQN Agent loaded from {filepath}")
         return agent
 
-def train_improved_dqn_agent(episodes: int = 5000, render_every: int = 1000, 
-                           env_size: int = 5, seed: int = 42, 
+def train_improved_dqn_agent(episodes: int = None, render_every: int = 1000, 
+                           env_size: int = 8, seed: int = 42, 
                            save_every: int = 1000):
     """Train the improved DQN agent"""
     # Import GridWorld from your existing file
@@ -320,108 +320,118 @@ def train_improved_dqn_agent(episodes: int = 5000, render_every: int = 1000,
     agent = ImprovedDQNAgent(state_size=state_size, action_size=4)
     
     print("🚀 Training Improved DQN agent...")
-    print(f"Episodes: {episodes}")
+    print(f"Episodes: Unlimited (train until interrupted)")
     print(f"State size: {state_size}")
     print(f"Device: {agent.device}")
+    print("Press Ctrl+C to stop training")
     print()
     
     success_count = 0
     start_time = time.time()
+    episode = 0
     
-    for episode in range(episodes):
-        observation, info = env.reset()
-        total_reward = 0
-        steps = 0
-        
-        # Get initial state
-        grid_state = env.grid
-        agent_pos = info['agent_pos']
-        goal_pos = info['goal_pos']
-        enemy_pos = info.get('enemy_pos', [env.size//2, env.size//2])  # Fallback if not in info
-        state = agent.get_state_representation(grid_state, agent_pos, goal_pos, enemy_pos)
-        old_pos = agent_pos.copy()
-        
-        while True:
-            action = agent.act(state, training=True)
-            next_observation, env_reward, terminated, truncated, info = env.step(action)
+    try:
+        while True:  # Train indefinitely
+            observation, info = env.reset()
+            total_reward = 0
+            steps = 0
             
-            # Get new state
-            new_grid_state = env.grid
-            new_agent_pos = info['agent_pos']
-            new_goal_pos = info['goal_pos']
-            new_enemy_pos = info.get('enemy_pos', [env.size//2, env.size//2])  # Fallback if not in info
-            next_state = agent.get_state_representation(new_grid_state, new_agent_pos, new_goal_pos, new_enemy_pos)
+            # Get initial state
+            grid_state = env.grid
+            agent_pos = info['agent_pos']
+            goal_pos = info['goal_pos']
+            enemy_pos = info.get('enemy_pos', [env.size//2, env.size//2])  # Fallback if not in info
+            state = agent.get_state_representation(grid_state, agent_pos, goal_pos, enemy_pos)
+            old_pos = agent_pos.copy()
             
-            # Calculate reward using improved function
-            enemy_collision = info.get('enemy_collision', False)
-            reward = agent.calculate_reward(action, new_agent_pos, old_pos, 
-                                          new_goal_pos, new_enemy_pos, 
-                                          enemy_collision, steps)
+            while True:
+                action = agent.act(state, training=True)
+                next_observation, env_reward, terminated, truncated, info = env.step(action)
+                
+                # Get new state
+                new_grid_state = env.grid
+                new_agent_pos = info['agent_pos']
+                new_goal_pos = info['goal_pos']
+                new_enemy_pos = info.get('enemy_pos', [env.size//2, env.size//2])  # Fallback if not in info
+                next_state = agent.get_state_representation(new_grid_state, new_agent_pos, new_goal_pos, new_enemy_pos)
+                
+                # Calculate reward using improved function
+                enemy_collision = info.get('enemy_collision', False)
+                reward = agent.calculate_reward(action, new_agent_pos, old_pos, 
+                                               new_goal_pos, new_enemy_pos, 
+                                               enemy_collision, steps)
+                
+                done = terminated or truncated
+                agent.remember(state, action, reward, next_state, done)
+                agent.replay()
+                
+                total_reward += reward
+                steps += 1
+                state = next_state
+                old_pos = new_agent_pos.copy()
+                
+                if episode % render_every == 0 and episode > 0:
+                    # env.render()  # Commented out to disable rendering
+                    # time.sleep(0.1)  # Commented out to disable rendering
+                    pass
+                
+                if done:
+                    break
             
-            done = terminated or truncated
-            agent.remember(state, action, reward, next_state, done)
-            agent.replay()
+            # Update target network
+            if episode % agent.target_update == 0:
+                agent.update_target_network()
             
-            total_reward += reward
-            steps += 1
-            state = next_state
-            old_pos = new_agent_pos.copy()
+            # Decay epsilon
+            if agent.epsilon > agent.epsilon_min:
+                agent.epsilon *= agent.epsilon_decay
             
-            if episode % render_every == 0 and episode > 0:
-                env.render()
-                time.sleep(0.1)
+            # Track statistics
+            agent.episode_rewards.append(total_reward)
+            agent.episode_steps.append(steps)
+            agent.epsilon_history.append(agent.epsilon)
             
-            if done:
-                break
-        
-        # Update target network
-        if episode % agent.target_update == 0:
-            agent.update_target_network()
-        
-        # Decay epsilon
-        if agent.epsilon > agent.epsilon_min:
-            agent.epsilon *= agent.epsilon_decay
-        
-        # Track statistics
-        agent.episode_rewards.append(total_reward)
-        agent.episode_steps.append(steps)
-        agent.epsilon_history.append(agent.epsilon)
-        
-        # Track success
-        if terminated and info['agent_pos'] == info['goal_pos'] and not info.get('enemy_collision', False):
-            success_count += 1
-        
-        # Calculate rolling success rate
-        window_size = min(100, episode + 1)
-        recent_successes = 0
-        for i in range(max(0, episode - window_size + 1), episode + 1):
-            ep_reward = agent.episode_rewards[i]
-            if ep_reward > 50:  # Threshold for success (goal reward is 100+)
-                recent_successes += 1
-        
-        success_rate = recent_successes / window_size
-        agent.success_rates.append(success_rate)
-        
-        # Save periodically
-        if (episode + 1) % save_every == 0:
-            checkpoint_filename = f"improved_dqn_checkpoint_{episode + 1}.pkl"
-            agent.save(checkpoint_filename)
-        
-        # Print progress
-        if episode % 100 == 0 and episode > 0:
-            elapsed_time = time.time() - start_time
-            avg_reward = np.mean(agent.episode_rewards[-100:])
-            avg_steps = np.mean(agent.episode_steps[-100:])
-            avg_loss = np.mean(agent.loss_history[-100:]) if agent.loss_history else 0
+            # Track success
+            if terminated and info['agent_pos'] == info['goal_pos'] and not info.get('enemy_collision', False):
+                success_count += 1
             
-            print(f"Episode {episode}/{episodes}")
-            print(f"  Avg Reward: {avg_reward:.2f}")
-            print(f"  Avg Steps: {avg_steps:.1f}")
-            print(f"  Success Rate: {success_rate:.1%}")
-            print(f"  Epsilon: {agent.epsilon:.3f}")
-            print(f"  Avg Loss: {avg_loss:.4f}")
-            print(f"  Time: {elapsed_time/60:.1f}m")
-            print()
+            # Calculate rolling success rate
+            window_size = min(100, episode + 1)
+            recent_successes = 0
+            for i in range(max(0, episode - window_size + 1), episode + 1):
+                ep_reward = agent.episode_rewards[i]
+                if ep_reward > 50:  # Threshold for success (goal reward is 100+)
+                    recent_successes += 1
+            
+            success_rate = recent_successes / window_size
+            agent.success_rates.append(success_rate)
+            
+            # Save periodically
+            if (episode + 1) % save_every == 0:
+                checkpoint_filename = f"improved_dqn_checkpoint_{episode + 1}.pkl"
+                agent.save(checkpoint_filename)
+            
+            # Print progress
+            if episode % 100 == 0 and episode > 0:
+                elapsed_time = time.time() - start_time
+                avg_reward = np.mean(agent.episode_rewards[-100:])
+                avg_steps = np.mean(agent.episode_steps[-100:])
+                avg_loss = np.mean(agent.loss_history[-100:]) if agent.loss_history else 0
+                
+                print(f"Episode {episode}")
+                print(f"  Avg Reward: {avg_reward:.2f}")
+                print(f"  Avg Steps: {avg_steps:.1f}")
+                print(f"  Success Rate: {success_rate:.1%}")
+                print(f"  Epsilon: {agent.epsilon:.3f}")
+                print(f"  Avg Loss: {avg_loss:.4f}")
+                print(f"  Time: {elapsed_time/60:.1f}m")
+                print()
+            
+            episode += 1
+            
+    except KeyboardInterrupt:
+        print("\n🛑 Training stopped by user")
+        print(f"Total episodes trained: {episode}")
     
     print("✅ Training completed!")
     print(f"Final success rate: {agent.success_rates[-1]:.1%}")
@@ -433,7 +443,7 @@ def test_improved_agent(agent, episodes: int = 10, render: bool = True):
     """Test the improved DQN agent"""
     from grid_world import GridWorld
     
-    env = GridWorld(size=5)
+    env = GridWorld(size=8)
     
     print(f"\n🧪 Testing improved DQN agent for {episodes} episodes...")
     
@@ -506,7 +516,7 @@ def main():
     print("=" * 50)
     
     # Train the agent
-    agent = train_improved_dqn_agent(episodes=5000, render_every=1000)
+    agent = train_improved_dqn_agent(render_every=1000, env_size=8)
     
     # Save the trained agent
     agent.save("improved_dqn_agent.pkl")

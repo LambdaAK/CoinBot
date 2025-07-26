@@ -5,7 +5,7 @@ import time
 import os
 
 class GridWorld:
-    def __init__(self, size: int = 5, max_steps: int = 25, seed: Optional[int] = None):
+    def __init__(self, size: int = 8, max_steps: int = 50, seed: Optional[int] = None):
         self.size = size
         self.grid = np.zeros((size, size), dtype=int)
         self.agent_pos = [0, 0]  # Start at top-left
