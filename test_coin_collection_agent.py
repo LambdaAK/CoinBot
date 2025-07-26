@@ -9,19 +9,218 @@ import numpy as np
 from coin_collection_agent import CoinCollectionAgent
 from grid_world import GridWorld
 import os
+import random
+from typing import Optional
+
+
+class CustomGridWorld(GridWorld):
+    """Custom GridWorld with configurable ranges for obstacles, coins, and enemies"""
+    
+    def __init__(self, size: int = 10, max_steps: int = 50, seed: Optional[int] = None,
+                 obstacle_range: tuple = (2, 4), coin_range: tuple = (3, 6), 
+                 enemy_range: tuple = (1, 2)):
+        self.obstacle_range = obstacle_range
+        self.coin_range = coin_range
+        self.enemy_range = enemy_range
+        super().__init__(size, max_steps, seed)
+    
+    def _initialize_grid(self):
+        """Initialize the grid with agent, coins, enemies, and some obstacles"""
+        self.grid = np.zeros((self.size, self.size), dtype=int)
+        
+        # Place agent
+        self.grid[self.agent_pos[0], self.agent_pos[1]] = 1
+        
+        # Place coins at random positions
+        self._place_coins()
+        
+        # Place enemies at random positions (not too close to agent or coins)
+        self._place_enemies()
+        
+        # Add obstacles with DFS validation
+        max_attempts = 100  # Prevent infinite loops
+        attempts = 0
+        
+        while attempts < max_attempts:
+            # Clear previous obstacles
+            self.obstacles = []
+            self.grid = np.zeros((self.size, self.size), dtype=int)
+            self.grid[self.agent_pos[0], self.agent_pos[1]] = 1
+            
+            # Re-place coins and enemies
+            self._place_coins()
+            self._place_enemies()
+            
+            # Add random obstacles using custom range
+            num_obstacles = random.randint(self.obstacle_range[0], self.obstacle_range[1])
+            for _ in range(num_obstacles):
+                while True:
+                    obstacle_pos = [random.randint(0, self.size-1), random.randint(0, self.size-1)]
+                    if (obstacle_pos != self.agent_pos and 
+                        obstacle_pos not in self.coins and
+                        obstacle_pos not in self.enemy_positions and 
+                        obstacle_pos not in self.obstacles):
+                        self.obstacles.append(obstacle_pos)
+                        self.grid[obstacle_pos[0], obstacle_pos[1]] = 3
+                        break
+            
+            # Check if at least one coin is reachable
+            if self._is_coin_reachable():
+                break
+            
+            attempts += 1
+        
+        # If we couldn't find a valid configuration, create a simple path
+        if attempts >= max_attempts:
+            self._create_simple_path()
+    
+    def _place_coins(self):
+        """Place coins at random positions using custom range"""
+        num_coins = random.randint(self.coin_range[0], self.coin_range[1])
+        self.coins = []
+        
+        for _ in range(num_coins):
+            max_attempts = 50
+            attempts = 0
+            
+            while attempts < max_attempts:
+                coin_row = random.randint(0, self.size - 1)
+                coin_col = random.randint(0, self.size - 1)
+                coin_pos = [coin_row, coin_col]
+                
+                # Check distance from agent
+                agent_dist = abs(coin_pos[0] - self.agent_pos[0]) + abs(coin_pos[1] - self.agent_pos[1])
+                
+                # Coin should be at least 1 step away from agent
+                # Also check distance from other coins
+                too_close_to_other_coin = False
+                for existing_coin in self.coins:
+                    coin_dist = abs(coin_pos[0] - existing_coin[0]) + abs(coin_pos[1] - existing_coin[1])
+                    if coin_dist < 1:  # Keep coins at least 1 step apart
+                        too_close_to_other_coin = True
+                        break
+                
+                if (coin_pos != self.agent_pos and 
+                    agent_dist >= 1 and
+                    not too_close_to_other_coin):
+                    self.coins.append(coin_pos)
+                    self.grid[coin_pos[0], coin_pos[1]] = 2
+                    break
+                
+                attempts += 1
+            
+            # Fallback placement if we couldn't find a good spot
+            if attempts >= max_attempts:
+                # Try to place in a corner or edge
+                fallback_positions = [
+                    [1, 1], [1, self.size-2], [self.size-2, 1], [self.size-2, self.size-2],
+                    [0, self.size//2], [self.size//2, 0], [self.size-1, self.size//2], [self.size//2, self.size-1]
+                ]
+                
+                for pos in fallback_positions:
+                    if (pos != self.agent_pos and 
+                        pos not in self.coins):
+                        self.coins.append(pos)
+                        self.grid[pos[0], pos[1]] = 2
+                        break
+                else:
+                    # Last resort: place somewhere random
+                    self.coins.append([1, 1])
+                    self.grid[1, 1] = 2
+    
+    def _place_enemies(self):
+        """Place enemies at safe distances from agent and coins using custom range"""
+        # Randomly choose number of enemies using custom range
+        num_enemies = random.randint(self.enemy_range[0], self.enemy_range[1])
+        self.enemy_positions = []
+        
+        for enemy_id in range(num_enemies):
+            max_attempts = 50
+            attempts = 0
+            
+            while attempts < max_attempts:
+                enemy_row = random.randint(0, self.size - 1)
+                enemy_col = random.randint(0, self.size - 1)
+                enemy_pos = [enemy_row, enemy_col]
+                
+                # Check distance from agent and coins
+                agent_dist = abs(enemy_pos[0] - self.agent_pos[0]) + abs(enemy_pos[1] - self.agent_pos[1])
+                
+                # Enemy should be at least 2 steps away from agent
+                # Also check distance from other enemies
+                too_close_to_other_enemy = False
+                for existing_enemy in self.enemy_positions:
+                    enemy_dist = abs(enemy_pos[0] - existing_enemy[0]) + abs(enemy_pos[1] - existing_enemy[1])
+                    if enemy_dist < 2:  # Keep enemies at least 2 steps apart
+                        too_close_to_other_enemy = True
+                        break
+                
+                if (enemy_pos != self.agent_pos and 
+                    enemy_pos not in self.coins and
+                    agent_dist >= 2 and
+                    not too_close_to_other_enemy):
+                    self.enemy_positions.append(enemy_pos)
+                    self.grid[enemy_pos[0], enemy_pos[1]] = 5
+                    break
+                
+                attempts += 1
+            
+            # Fallback placement if we couldn't find a good spot
+            if attempts >= max_attempts:
+                # Try to place in a corner or edge
+                fallback_positions = [
+                    [1, 1], [1, self.size-2], [self.size-2, 1], [self.size-2, self.size-2],
+                    [0, self.size//2], [self.size//2, 0], [self.size-1, self.size//2], [self.size//2, self.size-1]
+                ]
+                
+                for pos in fallback_positions:
+                    if (pos != self.agent_pos and 
+                        pos not in self.coins and
+                        pos not in self.enemy_positions):
+                        self.enemy_positions.append(pos)
+                        self.grid[pos[0], pos[1]] = 5
+                        break
+                else:
+                    # Last resort: place somewhere random
+                    self.enemy_positions.append([1, 1])
+                    self.grid[1, 1] = 5
+
+
+def get_range_input(prompt, default_min, default_max):
+    """Helper function to get range input from user"""
+    while True:
+        try:
+            user_input = input(prompt).strip()
+            if not user_input:
+                return (default_min, default_max)
+            
+            if ',' in user_input:
+                parts = user_input.split(',')
+                if len(parts) == 2:
+                    min_val = int(parts[0].strip())
+                    max_val = int(parts[1].strip())
+                    if min_val <= max_val and min_val >= 0:
+                        return (min_val, max_val)
+            
+            print(f"Please enter a range as 'min,max' (e.g., '{default_min},{default_max}')")
+        except ValueError:
+            print("Please enter valid numbers.")
 
 
 def main():
     print("\n=== Coin Collection Agent Tester ===")
+    
     # List available agents
     agents_dir = "agents"
     agent_files = [f for f in os.listdir(agents_dir) if f.endswith('.pkl')]
     if not agent_files:
         print("No agent files found in 'agents/' directory.")
         return
+    
     print("Available agents:")
     for idx, fname in enumerate(agent_files):
         print(f"  [{idx+1}] {fname}")
+    
     agent_idx = input(f"Select agent [1-{len(agent_files)}] (default 1): ").strip()
     try:
         agent_idx = int(agent_idx) - 1 if agent_idx else 0
@@ -30,16 +229,31 @@ def main():
             return
     except ValueError:
         agent_idx = 0
+    
     agent_file = agent_files[agent_idx]
 
+    # Get test parameters
     try:
         episodes = int(input("Number of test episodes [10]: ") or 10)
     except ValueError:
         episodes = 10
+    
     try:
         grid_size = int(input("Grid size [10]: ") or 10)
     except ValueError:
         grid_size = 10
+    
+    # Get ranges for obstacles, coins, and enemies
+    print("\n--- Environment Configuration ---")
+    obstacle_range = get_range_input("Obstacle range (min,max) [2,4]: ", 2, 4)
+    coin_range = get_range_input("Coin range (min,max) [3,6]: ", 3, 6)
+    enemy_range = get_range_input("Enemy range (min,max) [1,2]: ", 1, 2)
+    
+    try:
+        max_steps = int(input("Max steps per episode [50]: ") or 50)
+    except ValueError:
+        max_steps = 50
+    
     render_input = input("Render environment? [y/N]: ").strip().lower()
     render = render_input == 'y'
 
@@ -47,7 +261,20 @@ def main():
     agent = CoinCollectionAgent.load(agent_file)
 
     print(f"\n🧪 Testing agent for {episodes} episodes on {grid_size}x{grid_size} grid...")
-    env = GridWorld(size=grid_size)
+    print(f"Environment settings:")
+    print(f"  Obstacles: {obstacle_range[0]}-{obstacle_range[1]}")
+    print(f"  Coins: {coin_range[0]}-{coin_range[1]}")
+    print(f"  Enemies: {enemy_range[0]}-{enemy_range[1]}")
+    print(f"  Max steps: {max_steps}")
+    
+    # Create custom environment with specified parameters
+    env = CustomGridWorld(
+        size=grid_size, 
+        max_steps=max_steps,
+        obstacle_range=obstacle_range,
+        coin_range=coin_range,
+        enemy_range=enemy_range
+    )
 
     success_count = 0
     total_rewards = []
@@ -64,25 +291,32 @@ def main():
         enemy_positions = info.get('enemy_pos', [])
         state = agent.get_state_representation(grid_state, agent_pos, coins, enemy_positions)
         old_pos = agent_pos.copy()
+        
         print(f"\nEpisode {episode + 1}:")
+        
         while True:
             action = agent.act(state, training=False)
             next_observation, env_reward, terminated, truncated, info = env.step(action)
+            
             new_grid_state = env.grid
             new_agent_pos = info['agent_pos']
             new_coins = info['coins']
             new_enemy_positions = info.get('enemy_pos', [])
             next_state = agent.get_state_representation(new_grid_state, new_agent_pos, new_coins, new_enemy_positions)
+            
             enemy_collision = info.get('enemy_collision', False)
             coin_collected = info.get('coin_collected', False)
             reward = agent.calculate_reward(action, new_agent_pos, old_pos, new_coins, new_enemy_positions, enemy_collision, coin_collected, steps)
+            
             total_reward += reward
             steps += 1
             state = next_state
             old_pos = new_agent_pos.copy()
+            
             if render:
                 env.render()
                 time.sleep(0.2)
+            
             if terminated or truncated:
                 if terminated and info['all_coins_collected'] and not enemy_collision:
                     print("🎉 Success! All coins collected!")
@@ -92,6 +326,7 @@ def main():
                 else:
                     print("⏰ Time's up!")
                 break
+        
         total_rewards.append(total_reward)
         total_steps.append(steps)
         total_coins_collected.append(info['coins_collected'])
@@ -102,6 +337,7 @@ def main():
     print(f"Average reward: {np.mean(total_rewards):.2f}")
     print(f"Average steps: {np.mean(total_steps):.1f}")
     print(f"Average coins collected: {np.mean(total_coins_collected):.1f}")
+
 
 if __name__ == "__main__":
     main() 
