@@ -6,7 +6,7 @@ Loads a trained coin collection agent and evaluates it on the GridWorld environm
 """
 import time
 import numpy as np
-from coin_collection_agent import CoinCollectionAgent
+from DQN_agent import CoinCollectionAgent
 from grid_world import GridWorld
 import os
 import random
