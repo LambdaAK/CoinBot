@@ -10,6 +10,7 @@ class GridWorld:
         self.grid = np.zeros((size, size), dtype=int)
         self.agent_pos = [0, 0]  # Start at top-left
         self.goal_pos = [size-1, size-1]  # Goal at bottom-right
+        self.enemy_pos = [0, 0]  # Enemy position
         self.obstacles = []
         self.steps = 0
         self.max_steps = max_steps
@@ -18,7 +19,7 @@ class GridWorld:
         # RL environment properties
         self.action_space = 4  # 0=up, 1=right, 2=down, 3=left
         self.observation_space = size * size  # flattened grid
-        self.reward_range = (-5.0, 10.0)  # min/max possible rewards
+        self.reward_range = (-10.0, 10.0)  # min/max possible rewards (updated for enemy penalty)
         
         # Emoji mappings
         self.emoji_map = {
@@ -27,6 +28,7 @@ class GridWorld:
             2: "G",  # Goal
             3: "X",  # Obstacle
             4: "★",  # Reward
+            5: "E",  # Enemy
         }
         
         # Set seed for reproducibility
@@ -69,7 +71,7 @@ class GridWorld:
         return False
     
     def _initialize_grid(self):
-        """Initialize the grid with agent, goal, and some obstacles"""
+        """Initialize the grid with agent, goal, enemy, and some obstacles"""
         self.grid = np.zeros((self.size, self.size), dtype=int)
         
         # Place agent
@@ -77,6 +79,9 @@ class GridWorld:
         
         # Place goal
         self.grid[self.goal_pos[0], self.goal_pos[1]] = 2
+        
+        # Place enemy at random position (not too close to agent or goal)
+        self._place_enemy()
         
         # Add obstacles with DFS validation
         max_attempts = 100  # Prevent infinite loops
@@ -88,6 +93,7 @@ class GridWorld:
             self.grid = np.zeros((self.size, self.size), dtype=int)
             self.grid[self.agent_pos[0], self.agent_pos[1]] = 1
             self.grid[self.goal_pos[0], self.goal_pos[1]] = 2
+            self._place_enemy()
             
             # Add random obstacles
             num_obstacles = random.randint(2, 4)
@@ -95,7 +101,8 @@ class GridWorld:
                 while True:
                     obstacle_pos = [random.randint(0, self.size-1), random.randint(0, self.size-1)]
                     if (obstacle_pos != self.agent_pos and 
-                        obstacle_pos != self.goal_pos and 
+                        obstacle_pos != self.goal_pos and
+                        obstacle_pos != self.enemy_pos and 
                         obstacle_pos not in self.obstacles):
                         self.obstacles.append(obstacle_pos)
                         self.grid[obstacle_pos[0], obstacle_pos[1]] = 3
@@ -117,6 +124,7 @@ class GridWorld:
         self.grid = np.zeros((self.size, self.size), dtype=int)
         self.grid[self.agent_pos[0], self.agent_pos[1]] = 1
         self.grid[self.goal_pos[0], self.goal_pos[1]] = 2
+        self._place_enemy()
         
         # Add minimal obstacles that don't block the path
         # For a 5x5 grid, we can add obstacles in corners or edges
@@ -131,6 +139,87 @@ class GridWorld:
         for pos in selected_obstacles:
             self.obstacles.append(pos)
             self.grid[pos[0], pos[1]] = 3
+    
+    def _place_enemy(self):
+        """Place enemy at a safe distance from agent and goal"""
+        max_attempts = 50
+        attempts = 0
+        
+        while attempts < max_attempts:
+            enemy_row = random.randint(0, self.size - 1)
+            enemy_col = random.randint(0, self.size - 1)
+            enemy_pos = [enemy_row, enemy_col]
+            
+            # Check distance from agent and goal
+            agent_dist = abs(enemy_pos[0] - self.agent_pos[0]) + abs(enemy_pos[1] - self.agent_pos[1])
+            goal_dist = abs(enemy_pos[0] - self.goal_pos[0]) + abs(enemy_pos[1] - self.goal_pos[1])
+            
+            # Enemy should be at least 2 steps away from agent and goal
+            if (enemy_pos != self.agent_pos and 
+                enemy_pos != self.goal_pos and
+                agent_dist >= 2 and 
+                goal_dist >= 2):
+                self.enemy_pos = enemy_pos
+                self.grid[enemy_pos[0], enemy_pos[1]] = 5
+                return
+            
+            attempts += 1
+        
+        # Fallback: place enemy in center if possible
+        center = self.size // 2
+        if ([center, center] != self.agent_pos and 
+            [center, center] != self.goal_pos):
+            self.enemy_pos = [center, center]
+            self.grid[center, center] = 5
+        else:
+            # Last resort: place somewhere random
+            self.enemy_pos = [1, 1]
+            self.grid[1, 1] = 5
+    
+    def _move_enemy(self):
+        """Move enemy randomly to adjacent cell (50% chance to move)"""
+        # Only move 50% of the time
+        if random.random() < 0.5:
+            # Clear current enemy position
+            self.grid[self.enemy_pos[0], self.enemy_pos[1]] = 0
+            
+            # Get possible moves
+            possible_moves = []
+            directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]  # up, down, left, right
+            
+            for dr, dc in directions:
+                new_row = self.enemy_pos[0] + dr
+                new_col = self.enemy_pos[1] + dc
+                
+                # Check bounds
+                if (0 <= new_row < self.size and 0 <= new_col < self.size):
+                    # Check if not obstacle or goal (enemy can move through agent space)
+                    if self.grid[new_row, new_col] not in [2, 3]:  # not goal or obstacle
+                        possible_moves.append([new_row, new_col])
+            
+            # If no valid moves, stay in place
+            if possible_moves:
+                self.enemy_pos = random.choice(possible_moves)
+            
+            # Place enemy in new position (may overwrite agent temporarily)
+            if self.grid[self.enemy_pos[0], self.enemy_pos[1]] == 1:
+                # Enemy moved to agent position - will be handled in collision check
+                pass
+            else:
+                self.grid[self.enemy_pos[0], self.enemy_pos[1]] = 5
+    
+    def _check_enemy_collision(self) -> bool:
+        """Check if agent is adjacent to or on enemy"""
+        agent_row, agent_col = self.agent_pos
+        enemy_row, enemy_col = self.enemy_pos
+        
+        # Check if on same position
+        if agent_row == enemy_row and agent_col == enemy_col:
+            return True
+        
+        # Check if adjacent (4-directional)
+        distance = abs(agent_row - enemy_row) + abs(agent_col - enemy_col)
+        return distance == 1
     
     def reset(self, seed: Optional[int] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
         """
@@ -148,10 +237,17 @@ class GridWorld:
         self.obstacles = []
         self._initialize_grid()
         
+        # Check initial conditions
+        goal_reached = (self.agent_pos == self.goal_pos)
+        enemy_collision = self._check_enemy_collision()
+        
         info = {
             'agent_pos': self.agent_pos,
             'goal_pos': self.goal_pos,
-            'steps': self.steps
+            'enemy_pos': self.enemy_pos,
+            'steps': self.steps,
+            'goal_reached': goal_reached,
+            'enemy_collision': enemy_collision
         }
         
         return self._get_state(), info
@@ -200,11 +296,23 @@ class GridWorld:
             self.agent_pos = new_pos
             self.grid[self.agent_pos[0], self.agent_pos[1]] = 1
         
-        # Reward calculation is now handled by the agent
+        # Move enemy after agent moves
+        self._move_enemy()
         
-        # Check if goal reached
+        # Update grid display (enemy might overwrite agent temporarily)
+        if self.enemy_pos != self.agent_pos:
+            self.grid[self.enemy_pos[0], self.enemy_pos[1]] = 5
+        
+        # Always ensure agent is visible on grid
+        self.grid[self.agent_pos[0], self.agent_pos[1]] = 1
+        
+        # Check for enemy collision (game over condition)
+        enemy_collision = self._check_enemy_collision()
+        
+        # Check if goal reached or enemy collision
         terminated = False
-        if self.agent_pos == self.goal_pos:
+        goal_reached = (self.agent_pos == self.goal_pos)
+        if goal_reached or enemy_collision:
             terminated = True
         
         # Check if max steps reached
@@ -216,6 +324,9 @@ class GridWorld:
             'steps': self.steps,
             'agent_pos': self.agent_pos,
             'goal_pos': self.goal_pos,
+            'enemy_pos': self.enemy_pos,
+            'enemy_collision': enemy_collision,
+            'goal_reached': goal_reached,
             'action': action
         }
         
@@ -261,10 +372,23 @@ class GridWorld:
             print(row)
         
         print("=" * (self.size * 4 + 2))
-        print("Legend: A=Agent, G=Goal, X=Obstacle, ·=Empty")
+        print("Legend: A=Agent, G=Goal, X=Obstacle, E=Enemy, ·=Empty")
         print(f"Agent Position: {self.agent_pos}")
         print(f"Goal Position: {self.goal_pos}")
-        print(f"Distance to Goal: {self.get_distance_to_goal()}")
+        print(f"Enemy Position: {self.enemy_pos}")
+        
+        # Calculate distances
+        distance_to_goal = abs(self.agent_pos[0] - self.goal_pos[0]) + abs(self.agent_pos[1] - self.goal_pos[1])
+        distance_to_enemy = abs(self.agent_pos[0] - self.enemy_pos[0]) + abs(self.agent_pos[1] - self.enemy_pos[1])
+        
+        print(f"Distance to Goal: {distance_to_goal}")
+        print(f"Distance to Enemy: {distance_to_enemy}")
+        
+        # Warning if close to enemy
+        if distance_to_enemy <= 2:
+            print("⚠️  WARNING: Enemy nearby!")
+        if distance_to_enemy <= 1:
+            print("💥 DANGER: Enemy can catch you!")
         print(f"Valid Actions: {self.get_valid_actions()}")
         print()
 

@@ -6,7 +6,7 @@ This script loads a previously trained DQN agent and watches it play
 the grid world game. DQN agents are stored in the 'agents' folder.
 """
 
-from dqn_agent import DQNAgent, watch_saved_dqn_agent
+from dqn_agent import ImprovedDQNAgent, test_improved_agent
 import argparse
 import os
 import glob
@@ -67,6 +67,29 @@ def select_agent_interactively():
         except KeyboardInterrupt:
             print("\n👋 Goodbye!")
             return None
+
+def watch_saved_dqn_agent(filename: str, episodes: int = 10):
+    """Load and watch a saved DQN agent play"""
+    print("🎬 Loading saved DQN agent for demonstration...")
+    
+    try:
+        # Load the trained agent
+        agent = ImprovedDQNAgent.load(filename)
+        
+        # Watch the agent play
+        success_count, rewards, steps = test_improved_agent(agent, episodes=episodes, render=True)
+        
+        print(f"\n🎯 DQN Agent Performance:")
+        print(f"Success rate: {success_count}/{episodes} ({success_count/episodes*100:.1f}%)")
+        print(f"Average reward: {sum(rewards)/len(rewards):.2f}")
+        print(f"Average steps: {sum(steps)/len(steps):.1f}")
+        
+    except FileNotFoundError:
+        print(f"❌ DQN Agent file '{filename}' not found!")
+        print("Please train a DQN agent first using: python dqn_agent.py")
+    except Exception as e:
+        print(f"❌ Error loading agent: {e}")
+        print("Make sure the agent file is compatible with the current version.")
 
 def main():
     parser = argparse.ArgumentParser(description='Watch a saved DQN agent play')

@@ -69,19 +69,24 @@ class QLearningAgent:
         new_q = current_q + self.learning_rate * (reward + self.discount_factor * max_next_q - current_q)
         self.q_table[state_key][action] = new_q
     
-    def calculate_reward(self, action: int, new_pos: list, old_pos: list) -> float:
+    def calculate_reward(self, action: int, new_pos: list, old_pos: list, enemy_pos: list = None, enemy_collision: bool = False) -> float:
         """
-        Calculate reward using goal-focused approach (prevents local optima)
-        Encourages reaching the goal without creating proximity traps
+        Calculate reward using goal-focused approach with enemy avoidance
         
         Args:
             action: Action taken
             new_pos: New position after action
             old_pos: Position before action
+            enemy_pos: Enemy position
+            enemy_collision: Whether agent collided with enemy
             
         Returns:
             Reward value
         """
+        # Enemy collision (game over - large penalty)
+        if enemy_collision:
+            return -10.0
+        
         # Goal reward (highest priority)
         if new_pos == self.goal_pos:
             return 10.0
@@ -96,6 +101,15 @@ class QLearningAgent:
         # Only reward actual progress toward goal
         if new_distance < old_distance:
             reward += 0.1  # Small bonus for moving closer
+        
+        # Enemy avoidance bonus - reward for moving away from enemy
+        if enemy_pos:
+            old_enemy_dist = abs(old_pos[0] - enemy_pos[0]) + abs(old_pos[1] - enemy_pos[1])
+            new_enemy_dist = abs(new_pos[0] - enemy_pos[0]) + abs(new_pos[1] - enemy_pos[1])
+            
+            # Small bonus for moving away from enemy (but smaller than goal progress)
+            if new_enemy_dist > old_enemy_dist:
+                reward += 0.05
         
         return reward
     
@@ -209,7 +223,9 @@ def train_agent(episodes: int = 1000, render_every: int = 1000, env_size: int = 
             
             # Calculate reward using agent's reward function
             new_pos = info['agent_pos']
-            reward = agent.calculate_reward(action, new_pos, old_pos)
+            enemy_pos = info.get('enemy_pos')
+            enemy_collision = info.get('enemy_collision', False)
+            reward = agent.calculate_reward(action, new_pos, old_pos, enemy_pos, enemy_collision)
             
             # Update agent
             agent.update(observation, action, reward, next_observation, terminated)
@@ -232,8 +248,8 @@ def train_agent(episodes: int = 1000, render_every: int = 1000, env_size: int = 
         agent.episode_steps.append(steps)
         agent.epsilon_history.append(agent.epsilon)
         
-        # Track success
-        if terminated and info['agent_pos'] == info['goal_pos']:
+        # Track success (only if reached goal, not enemy collision)
+        if terminated and info['agent_pos'] == info['goal_pos'] and not info.get('enemy_collision', False):
             success_count += 1
         
         # Calculate success rate over last 100 episodes
@@ -249,9 +265,9 @@ def train_agent(episodes: int = 1000, render_every: int = 1000, env_size: int = 
         
         # Save agent periodically
         if (episode + 1) % save_every == 0:
-            checkpoint_filename = f"agent_checkpoint_{episode + 1}.pkl"
+            checkpoint_filename = f"q_learning_checkpoint_{episode + 1}.pkl"
             agent.save(checkpoint_filename)
-            print(f"💾 Checkpoint saved: {checkpoint_filename}")
+            print(f"💾 Q-learning checkpoint saved: {checkpoint_filename}")
         
         # Print progress less frequently
         if episode % 100 == 0:
@@ -301,7 +317,9 @@ def test_agent(agent, episodes: int = 10, env_size: int = 5, render: bool = Fals
             
             # Calculate reward using agent's reward function
             new_pos = info['agent_pos']
-            reward = agent.calculate_reward(action, new_pos, old_pos)
+            enemy_pos = info.get('enemy_pos')
+            enemy_collision = info.get('enemy_collision', False)
+            reward = agent.calculate_reward(action, new_pos, old_pos, enemy_pos, enemy_collision)
             
             total_reward += reward
             steps += 1
@@ -314,9 +332,11 @@ def test_agent(agent, episodes: int = 10, env_size: int = 5, render: bool = Fals
                 time.sleep(0.1)  # Reduced sleep time
             
             if terminated or truncated:
-                if terminated and info['agent_pos'] == info['goal_pos']:
+                if terminated and info['agent_pos'] == info['goal_pos'] and not info.get('enemy_collision', False):
                     print("🎉 Success! Agent reached the goal!")
                     success_count += 1
+                elif terminated and info.get('enemy_collision', False):
+                    print("💀 Game Over! Agent got too close to the enemy!")
                 elif truncated:
                     print("⏰ Time's up! Agent ran out of moves.")
                 else:
