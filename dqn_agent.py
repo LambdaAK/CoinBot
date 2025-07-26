@@ -137,9 +137,9 @@ class ImprovedDQNAgent:
         num_enemies = len(enemy_positions) if enemy_positions else 0
         state_vector.append(num_enemies / 5.0)  # Normalize by max expected enemies
         
-        # 10. Local grid information (3x3 around agent)
-        for dx in [-1, 0, 1]:
-            for dy in [-1, 0, 1]:
+        # 10. Local grid information (5x5 around agent)
+        for dx in [-2, -1, 0, 1, 2]:
+            for dy in [-2, -1, 0, 1, 2]:
                 x, y = agent_pos[0] + dx, agent_pos[1] + dy
                 if 0 <= x < size and 0 <= y < size:
                     # Obstacle presence
@@ -234,18 +234,18 @@ class ImprovedDQNAgent:
                 old_enemy_dist = abs(old_pos[0] - enemy_pos[0]) + abs(old_pos[1] - enemy_pos[1])
                 new_enemy_dist = abs(new_pos[0] - enemy_pos[0]) + abs(new_pos[1] - enemy_pos[1])
                 
-                # Penalty for moving toward enemy
+                # Penalty for moving toward enemy (reduced from -1.0 to -0.2)
                 if new_enemy_dist < old_enemy_dist:
-                    enemy_reward -= 1.0
+                    enemy_reward -= 0.2
                 # Small reward for moving away from enemy
                 elif new_enemy_dist > old_enemy_dist:
                     enemy_reward += 0.5
                 
-                # Additional penalty for being very close to any enemy
+                # Additional penalty for being very close to any enemy (reduced penalties)
                 if new_enemy_dist <= 2:
-                    enemy_reward -= 2.0
+                    enemy_reward -= 0.5  # Reduced from -2.0 to -0.5
                 elif new_enemy_dist <= 3:
-                    enemy_reward -= 0.5
+                    enemy_reward -= 0.1  # Reduced from -0.5 to -0.1
         
         # Step penalty to encourage efficiency
         step_penalty = -0.1
@@ -337,8 +337,8 @@ def train_improved_dqn_agent(episodes: int = None, render_every: int = 1000,
     
     # Calculate state size based on improved representation
     # 2 (agent) + 2 (goal) + 2 (closest_enemy) + 1 (goal_dist) + 1 (enemy_dist) 
-    # + 2 (goal_dir) + 2 (enemy_dir) + 1 (num_enemies) + 27 (3x3 local grid * 3 features)
-    state_size = 40
+    # + 2 (goal_dir) + 2 (enemy_dir) + 1 (num_enemies) + 75 (5x5 local grid * 3 features)
+    state_size = 88
     
     agent = ImprovedDQNAgent(state_size=state_size, action_size=4)
     
