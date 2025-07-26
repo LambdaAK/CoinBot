@@ -384,7 +384,12 @@ class CoinCollectionAgent:
     
     def save(self, filename: str = "coin_collection_agent.pkl"):
         """Save the trained agent"""
-        agents_dir = "agents"
+        # Get the project root directory (parent of src)
+        import os
+        current_dir = os.path.dirname(os.path.abspath(__file__))  # src directory
+        project_root = os.path.dirname(current_dir)  # project root
+        agents_dir = os.path.join(project_root, "agents")
+        
         if not os.path.exists(agents_dir):
             os.makedirs(agents_dir)
         
@@ -421,7 +426,11 @@ class CoinCollectionAgent:
     @classmethod
     def load(cls, filename: str):
         """Load a trained agent"""
-        filepath = os.path.join("agents", filename)
+        # Get the project root directory (parent of src)
+        import os
+        current_dir = os.path.dirname(os.path.abspath(__file__))  # src directory
+        project_root = os.path.dirname(current_dir)  # project root
+        filepath = os.path.join(project_root, "agents", filename)
         
         with open(filepath, 'rb') as f:
             agent_data = pickle.load(f)
@@ -460,7 +469,11 @@ def train_coin_collection_agent(episodes: int = None, render_every: int = 1000,
                                save_every: int = 1000):
     """Train the coin collection DQN agent with weapon powerups"""
     
-    from grid_world import GridWorld
+    # Try relative import first, fall back to absolute import
+    try:
+        from .grid_world import GridWorld
+    except ImportError:
+        from grid_world import GridWorld
     
     # Create environment
     env = GridWorld(size=env_size, seed=seed)
@@ -612,7 +625,11 @@ def train_coin_collection_agent(episodes: int = None, render_every: int = 1000,
 def test_coin_collection_agent(agent, episodes: int = 10, render: bool = True):
     """Test the coin collection DQN agent with weapon powerups"""
     
-    from grid_world import GridWorld
+    # Try relative import first, fall back to absolute import
+    try:
+        from .grid_world import GridWorld
+    except ImportError:
+        from grid_world import GridWorld
     
     env = GridWorld(size=10)
     

@@ -284,8 +284,15 @@ def get_range_input(prompt, default_min, default_max):
 def main():
     print("\n=== Coin Collection Agent Tester ===")
     
-    # List available agents
-    agents_dir = "agents"
+    # List available agents (look in project root, not src directory)
+    current_dir = os.path.dirname(os.path.abspath(__file__))  # src directory
+    project_root = os.path.dirname(current_dir)  # project root
+    agents_dir = os.path.join(project_root, "agents")
+    
+    if not os.path.exists(agents_dir):
+        print(f"No agents directory found at: {agents_dir}")
+        return
+        
     agent_files = [f for f in os.listdir(agents_dir) if f.endswith('.pkl')]
     if not agent_files:
         print("No agent files found in 'agents/' directory.")
