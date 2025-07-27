@@ -22,23 +22,19 @@ class CoinCollectionDQN(nn.Module):
     
     def __init__(self, state_size: int, action_size: int):
         super(CoinCollectionDQN, self).__init__()
-        
-        # Larger network for more complex coin collection strategy
-        self.fc1 = nn.Linear(state_size, 256)
-        self.fc2 = nn.Linear(256, 256)
-        self.fc3 = nn.Linear(256, 128)
-        self.fc4 = nn.Linear(128, action_size)
-        
-        # Dropout for regularization
-        self.dropout = nn.Dropout(0.2)
+        # More complex network: more layers, increased capacity
+        self.fc1 = nn.Linear(state_size, 128)
+        self.fc2 = nn.Linear(128, 128)
+        self.fc3 = nn.Linear(128, 64)
+        self.fc4 = nn.Linear(64, 32)
+        self.fc5 = nn.Linear(32, action_size)
         
     def forward(self, x):
         x = F.relu(self.fc1(x))
-        x = self.dropout(x)
         x = F.relu(self.fc2(x))
-        x = self.dropout(x)
         x = F.relu(self.fc3(x))
-        x = self.fc4(x)
+        x = F.relu(self.fc4(x))
+        x = self.fc5(x)
         return x
 
 class CoinCollectionAgent:
@@ -325,8 +321,8 @@ class CoinCollectionAgent:
                 old_coin_dist = min(old_coin_dist, old_dist)
                 new_coin_dist = min(new_coin_dist, new_dist)
             
-            # Progress reward - encourage moving toward coins
-            progress_reward = (old_coin_dist - new_coin_dist) * 3.0
+            # Progress reward - encourage moving toward coins (reduced multiplier to prevent oscillation)
+            progress_reward = (old_coin_dist - new_coin_dist) * 1.0
         else:
             progress_reward = 0.0
         
@@ -364,11 +360,27 @@ class CoinCollectionAgent:
                     elif new_enemy_dist <= 2:
                         enemy_reward -= 0.5  # Moderate penalty for being close when unarmed
         
-        # Step penalty to encourage efficiency
-        step_penalty = -0.1
+        # Step penalty to encourage efficiency (increased to discourage oscillation)
+        step_penalty = -0.3
         
         # Wall bump penalty (if agent didn't move when it should have)
         wall_penalty = -0.5 if new_pos == old_pos else 0.0
+        
+        # Repetitive movement penalty (to prevent oscillation)
+        repetitive_penalty = 0.0
+        if hasattr(self, '_last_positions'):
+            if len(self._last_positions) >= 4:
+                # Check if agent is moving back and forth between same positions
+                recent_positions = self._last_positions[-4:]
+                if len(set(str(pos) for pos in recent_positions)) <= 2:
+                    repetitive_penalty = -1.0  # Penalty for repetitive movement
+        else:
+            self._last_positions = []
+        
+        # Update position history
+        self._last_positions.append(new_pos)
+        if len(self._last_positions) > 6:  # Keep only last 6 positions
+            self._last_positions.pop(0)
         
         # Coin proximity bonus (small reward for being near coins)
         coin_proximity_bonus = 0.0
@@ -378,7 +390,7 @@ class CoinCollectionAgent:
             if min_coin_dist <= 1:
                 coin_proximity_bonus = 0.1  # Small bonus for being adjacent to a coin
         
-        total_reward = progress_reward + enemy_reward + step_penalty + wall_penalty + coin_proximity_bonus
+        total_reward = progress_reward + enemy_reward + step_penalty + wall_penalty + repetitive_penalty + coin_proximity_bonus
         
         return total_reward
     
@@ -475,7 +487,7 @@ def train_coin_collection_agent(episodes: int = None, render_every: int = 1000,
     except ImportError:
         from grid_world import GridWorld
     
-    # Create environment
+    # Create environment (we'll reset with different seeds each episode)
     env = GridWorld(size=env_size, seed=seed)
     
     # Calculate state size based on enhanced representation with weapon powerups
@@ -500,6 +512,7 @@ def train_coin_collection_agent(episodes: int = None, render_every: int = 1000,
     print(f"   Environment: {env_size}x{env_size} grid")
     print(f"   State size: {state_size}")
     print(f"   Episodes: {'Infinite' if episodes is None else episodes}")
+    print(f"   Random environments: Each episode uses different layout")
     print("=" * 50)
     
     episode = 0
@@ -507,7 +520,9 @@ def train_coin_collection_agent(episodes: int = None, render_every: int = 1000,
     
     try:
         while episodes is None or episode < episodes:
-            observation, info = env.reset()
+            # Use episode number as seed to ensure different environment each time
+            episode_seed = seed + episode if seed is not None else episode
+            observation, info = env.reset(seed=episode_seed)
             total_reward = 0
             steps = 0
             
@@ -564,61 +579,49 @@ def train_coin_collection_agent(episodes: int = None, render_every: int = 1000,
             # Track statistics
             agent.episode_rewards.append(total_reward)
             agent.episode_steps.append(steps)
-            agent.epsilon_history.append(agent.epsilon)
             
-            # Track success (all coins collected)
-            if terminated and info['all_coins_collected'] and not info.get('enemy_collision', False):
+            # Check if episode was successful (all coins collected)
+            success = len(info['coins']) == 0
+            if success:
                 success_count += 1
             
-            # Track coins collected
-            coins_collected = info['coins_collected']
-            agent.coins_collected_history.append(coins_collected)
-            
-            # Calculate success rate over last 100 episodes
-            if episode >= 99:
-                recent_success_rate = sum(1 for i in range(episode-99, episode+1) 
-                                        if agent.episode_rewards[i] > 0) / 100
-                agent.success_rates.append(recent_success_rate)
-            else:
-                agent.success_rates.append(success_count / (episode + 1))
+            # Calculate success rate
+            success_rate = success_count / (episode + 1) * 100
             
             # Decay epsilon
             agent.epsilon = max(agent.epsilon_min, agent.epsilon * agent.epsilon_decay)
             
-            # Update target network every 100 episodes
-            if episode % 100 == 0:
-                agent.update_target_network()
-            
             # Print progress
-            if episode % 100 == 0:
-                avg_reward = np.mean(agent.episode_rewards[-100:])
-                avg_steps = np.mean(agent.episode_steps[-100:])
-                avg_coins = np.mean(agent.coins_collected_history[-100:])
-                success_rate = agent.success_rates[-1] if agent.success_rates else 0
-                
-                print(f"Episode {episode:4d} | "
-                      f"Avg Reward: {avg_reward:6.2f} | "
-                      f"Avg Steps: {avg_steps:4.1f} | "
-                      f"Avg Coins: {avg_coins:3.1f} | "
-                      f"Success Rate: {success_rate:.3f} | "
+            if episode % 100 == 0 or episode == 0:
+                avg_reward = np.mean(agent.episode_rewards[-100:]) if agent.episode_rewards else 0
+                avg_steps = np.mean(agent.episode_steps[-100:]) if agent.episode_steps else 0
+                print(f"Episode {episode:4d} | Success Rate: {success_rate:5.1f}% | "
+                      f"Avg Reward: {avg_reward:6.1f} | Avg Steps: {avg_steps:4.1f} | "
                       f"Epsilon: {agent.epsilon:.3f}")
+            
+            # Render occasionally
+            if render_every and episode % render_every == 0:
+                print(f"\n🎮 Rendering Episode {episode}")
+                env.render()
+                time.sleep(1)
             
             # Save agent periodically
             if save_every and episode % save_every == 0 and episode > 0:
                 agent.save(f"coin_collection_agent_episode_{episode}.pkl")
+                print(f"💾 Saved agent at episode {episode}")
+            
+            # Update target network periodically
+            if episode % 10 == 0:
+                agent.update_target_network()
             
             episode += 1
             
     except KeyboardInterrupt:
-        print("\n⏹️  Training interrupted by user")
+        print(f"\n⏹️  Training interrupted by user at episode {episode}")
     
     # Save final agent
     agent.save("coin_collection_agent_final.pkl")
-    
-    print(f"\n✅ Training completed!")
-    print(f"   Total episodes: {episode}")
-    print(f"   Final success rate: {agent.success_rates[-1] if agent.success_rates else 0:.3f}")
-    print(f"   Final epsilon: {agent.epsilon:.3f}")
+    print(f"💾 Final agent saved after {episode} episodes")
     
     return agent
 
