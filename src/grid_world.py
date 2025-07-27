@@ -606,108 +606,163 @@ class GridWorld:
         return int(min_distance)
     
     def render(self):
-        """Render the current state of the environment with colors and ASCII icons only (no emojis)"""
+        """Render the current state of the environment with vibrant colors and ASCII icons"""
         os.system('clear' if os.name == 'posix' else 'cls')
         
-        # Color codes
+        # Enhanced vibrant color codes
         colors = {
             'reset': '\033[0m',
             'bold': '\033[1m',
+            'dim': '\033[2m',
+            'underline': '\033[4m',
+            'blink': '\033[5m',
+            'reverse': '\033[7m',
+            'hidden': '\033[8m',
+            
+            # Bright foreground colors
             'red': '\033[91m',
             'green': '\033[92m',
-            'yellow': '\033[93;1m',  # Use bright yellow for coins
+            'yellow': '\033[93m',
             'blue': '\033[94m',
             'magenta': '\033[95m',
             'cyan': '\033[96m',
             'white': '\033[97m',
             'gray': '\033[90m',
+            
+            # Extra bright colors
+            'bright_red': '\033[91;1m',
+            'bright_green': '\033[92;1m',
+            'bright_yellow': '\033[93;1m',
+            'bright_blue': '\033[94;1m',
+            'bright_magenta': '\033[95;1m',
+            'bright_cyan': '\033[96;1m',
+            'bright_white': '\033[97;1m',
+            
+            # Background colors
+            'bg_red': '\033[41m',
+            'bg_green': '\033[42m',
+            'bg_yellow': '\033[43m',
+            'bg_blue': '\033[44m',
+            'bg_magenta': '\033[45m',
+            'bg_cyan': '\033[46m',
+            'bg_white': '\033[47m',
+            'bg_black': '\033[40m',
+            
+            # Special combinations
+            'gold': '\033[38;5;220m',      # Bright gold
+            'orange': '\033[38;5;208m',    # Bright orange
+            'purple': '\033[38;5;99m',     # Bright purple
+            'pink': '\033[38;5;213m',      # Bright pink
+            'lime': '\033[38;5;154m',      # Bright lime green
+            'sky_blue': '\033[38;5;117m',  # Sky blue
+            'fire_red': '\033[38;5;196m',  # Fire engine red
+            'emerald': '\033[38;5;46m',    # Emerald green
         }
         
-        # ASCII and color mappings for grid elements
+        # Enhanced grid display with vibrant colors
         grid_display = {
-            0: (".", colors['white']),      # Empty space
-            1: ("A", colors['green']),      # Agent
-            2: ("C", colors['yellow']),    # Coin (bright yellow)
-            3: ("X", colors['gray']),      # Obstacle
-            4: ("*", colors['magenta']),   # Reward (not used, but kept for completeness)
-            5: ("E", colors['red']),       # Enemy
-            6: ("W", colors['blue']),      # Weapon powerup
+            0: (".", colors['dim'] + colors['gray']),           # Empty space - subtle gray
+            1: ("A", colors['bold'] + colors['bright_green']),  # Agent - bright green
+            2: ("C", colors['bold'] + colors['gold']),          # Coin - bright gold
+            3: ("X", colors['bold'] + colors['gray']),          # Obstacle - gray
+            4: ("*", colors['bold'] + colors['bright_magenta']), # Reward - bright magenta
+            5: ("E", colors['bold'] + colors['fire_red']),      # Enemy - fire red
+            6: ("W", colors['bold'] + colors['bright_blue']),   # Weapon - bright blue
         }
         
-        # Header
-        print(f"{colors['bold']}{colors['cyan']}╔{'═' * (self.size * 4 + 2)}╗{colors['reset']}")
-        print(f"{colors['bold']}{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['white']}Grid World ({self.size}x{self.size}) - Step: {self.steps}{colors['reset']} {colors['cyan']}║{colors['reset']}")
-        print(f"{colors['bold']}{colors['cyan']}╚{'═' * (self.size * 4 + 2)}╝{colors['reset']}")
+        # Header with gradient effect
+        header_border = f"{colors['bold']}{colors['bright_cyan']}╔{'═' * (self.size * 4 + 2)}╗{colors['reset']}"
+        print(header_border)
         
-        # Grid
+        title = f"{colors['bold']}{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['bright_white']}🎮 Grid World ({self.size}x{self.size}) - Step: {self.steps}{colors['reset']} {colors['bright_cyan']}║{colors['reset']}"
+        print(title)
+        
+        footer_border = f"{colors['bold']}{colors['bright_cyan']}╚{'═' * (self.size * 4 + 2)}╝{colors['reset']}"
+        print(footer_border)
+        
+        # Grid with enhanced borders
         for i in range(self.size):
-            row = f"{colors['cyan']}║{colors['reset']}"
+            row = f"{colors['bright_cyan']}║{colors['reset']}"
             for j in range(self.size):
                 cell_value = self.grid[i, j]
                 icon, color = grid_display[cell_value]
                 row += f" {color}{icon}{colors['reset']} "
-            row += f"{colors['cyan']}║{colors['reset']}"
+            row += f"{colors['bright_cyan']}║{colors['reset']}"
             print(row)
         
-        # Footer
-        print(f"{colors['bold']}{colors['cyan']}╔{'═' * (self.size * 4 + 2)}╗{colors['reset']}")
+        # Enhanced footer
+        print(f"{colors['bold']}{colors['bright_cyan']}╔{'═' * (self.size * 4 + 2)}╗{colors['reset']}")
         
-        # Legend
-        print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['white']}Legend:{colors['reset']}")
+        # Enhanced legend with vibrant colors
+        print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['bright_white']}📋 Legend:{colors['reset']}")
         legend_items = [
-            (f"{colors['green']}A{colors['reset']} Agent", colors['green']),
-            (f"{colors['yellow']}C{colors['reset']} Coin", colors['yellow']),  # Ensure bright yellow
+            (f"{colors['bright_green']}A{colors['reset']} Agent", colors['bright_green']),
+            (f"{colors['gold']}C{colors['reset']} Coin", colors['gold']),
             (f"{colors['gray']}X{colors['reset']} Obstacle", colors['gray']),
-            (f"{colors['red']}E{colors['reset']} Enemy", colors['red']),
-            (f"{colors['blue']}W{colors['reset']} Weapon", colors['blue']),
-            (f"{colors['white']}.{colors['reset']} Empty", colors['white'])
+            (f"{colors['fire_red']}E{colors['reset']} Enemy", colors['fire_red']),
+            (f"{colors['bright_blue']}W{colors['reset']} Weapon", colors['bright_blue']),
+            (f"{colors['dim']}{colors['gray']}.{colors['reset']} Empty", colors['gray'])
         ]
         legend_line = " ".join([f"{item[0]}" for item in legend_items])
-        print(f"{colors['cyan']}║{colors['reset']} {legend_line}")
-        print(f"{colors['cyan']}║{colors['reset']}")
+        print(f"{colors['bright_cyan']}║{colors['reset']} {legend_line}")
+        print(f"{colors['bright_cyan']}║{colors['reset']}")
         
-        # Game info
-        print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['blue']}Agent Position:{colors['reset']} {colors['white']}{self.agent_pos}{colors['reset']}")
-        print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['yellow']}Coins Remaining:{colors['reset']} {colors['white']}{len(self.coins)}{colors['reset']}")
-        print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['yellow']}Coins Collected:{colors['reset']} {colors['white']}{self.coins_collected}{colors['reset']}")
-        print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['red']}Enemy Positions:{colors['reset']} {colors['white']}{self.enemy_positions}{colors['reset']}")
-        print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['red']}Number of Enemies:{colors['reset']} {colors['white']}{len(self.enemy_positions)}{colors['reset']}")
-        print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['blue']}Weapon Powerups:{colors['reset']} {colors['white']}{self.weapon_powerups}{colors['reset']}")
+        # Enhanced game info with better color coding
+        print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['bright_green']}🤖 Agent Position:{colors['reset']} {colors['bright_white']}{self.agent_pos}{colors['reset']}")
+        print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['gold']}💰 Coins Remaining:{colors['reset']} {colors['bright_white']}{len(self.coins)}{colors['reset']}")
+        print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['gold']}💎 Coins Collected:{colors['reset']} {colors['bright_white']}{self.coins_collected}{colors['reset']}")
+        print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['fire_red']}👹 Enemy Positions:{colors['reset']} {colors['bright_white']}{self.enemy_positions}{colors['reset']}")
+        print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['fire_red']}👻 Number of Enemies:{colors['reset']} {colors['bright_white']}{len(self.enemy_positions)}{colors['reset']}")
+        print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['sky_blue']}⚔️  Weapon Powerups:{colors['reset']} {colors['bright_white']}{self.weapon_powerups}{colors['reset']}")
         
-        # Weapon status
+        # Enhanced weapon status
         if self.has_weapon and self.weapon_turns_remaining > 0:
-            print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['blue']}Weapon Active:{colors['reset']} {colors['white']}{self.weapon_turns_remaining} turns remaining{colors['reset']}")
+            weapon_color = colors['bright_blue'] if self.weapon_turns_remaining > 5 else colors['orange']
+            print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{weapon_color}⚔️  Weapon Active:{colors['reset']} {colors['bright_white']}{self.weapon_turns_remaining} turns remaining{colors['reset']}")
         else:
-            print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['gray']}Weapon Status:{colors['reset']} {colors['white']}None{colors['reset']}")
+            print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['gray']}⚔️  Weapon Status:{colors['reset']} {colors['bright_white']}None{colors['reset']}")
         
-        # Calculate distances
+        # Calculate distances with enhanced warnings
         distance_to_nearest_coin = self.get_distance_to_nearest_coin()
         closest_enemy_distance = float('inf')
         for enemy_pos in self.enemy_positions:
             enemy_dist = abs(self.agent_pos[0] - enemy_pos[0]) + abs(self.agent_pos[1] - enemy_pos[1])
             closest_enemy_distance = min(closest_enemy_distance, enemy_dist)
-        print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['yellow']}Distance to Nearest Coin:{colors['reset']} {colors['white']}{distance_to_nearest_coin}{colors['reset']}")
-        print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['red']}Distance to Closest Enemy:{colors['reset']} {colors['white']}{closest_enemy_distance}{colors['reset']}")
+        
+        print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['gold']}📏 Distance to Nearest Coin:{colors['reset']} {colors['bright_white']}{distance_to_nearest_coin}{colors['reset']}")
+        print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['fire_red']}📏 Distance to Closest Enemy:{colors['reset']} {colors['bright_white']}{closest_enemy_distance}{colors['reset']}")
+        
+        # Enhanced warnings with better visual impact
         if closest_enemy_distance <= 2:
-            print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['yellow']}⚠️  WARNING: Enemy nearby!{colors['reset']}")
+            warning_color = colors['orange'] if closest_enemy_distance == 2 else colors['bright_yellow']
+            print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{warning_color}⚠️  WARNING: Enemy nearby!{colors['reset']}")
+        
         if closest_enemy_distance <= 1:
             if self.has_weapon and self.weapon_turns_remaining > 0:
-                print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['blue']}⚔️  ATTACK: You can defeat this enemy!{colors['reset']}")
+                print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['bright_blue']}⚔️  ATTACK: You can defeat this enemy!{colors['reset']}")
             else:
-                print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['red']}💥 DANGER: Enemy can catch you!{colors['reset']}")
-        print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['blue']}Valid Actions:{colors['reset']} {colors['white']}{self.get_valid_actions()}{colors['reset']}")
-        print(f"{colors['bold']}{colors['cyan']}╚{'═' * (self.size * 4 + 2)}╝{colors['reset']}")
+                print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['fire_red']}💥 DANGER: Enemy can catch you!{colors['reset']}")
+        
+        print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['bright_blue']}🎮 Valid Actions:{colors['reset']} {colors['bright_white']}{self.get_valid_actions()}{colors['reset']}")
+        print(f"{colors['bold']}{colors['bright_cyan']}╚{'═' * (self.size * 4 + 2)}╝{colors['reset']}")
         print()
 
 def manual_play():
-    """Allow manual play of the environment with colored output"""
+    """Allow manual play of the environment with vibrant colored output"""
     env = GridWorld(10)
     state, info = env.reset()
     
-    # Color codes
+    # Enhanced vibrant color codes (same as render method)
     colors = {
         'reset': '\033[0m',
         'bold': '\033[1m',
+        'dim': '\033[2m',
+        'underline': '\033[4m',
+        'blink': '\033[5m',
+        'reverse': '\033[7m',
+        'hidden': '\033[8m',
+        
+        # Bright foreground colors
         'red': '\033[91m',
         'green': '\033[92m',
         'yellow': '\033[93m',
@@ -715,26 +770,57 @@ def manual_play():
         'magenta': '\033[95m',
         'cyan': '\033[96m',
         'white': '\033[97m',
+        'gray': '\033[90m',
+        
+        # Extra bright colors
+        'bright_red': '\033[91;1m',
+        'bright_green': '\033[92;1m',
+        'bright_yellow': '\033[93;1m',
+        'bright_blue': '\033[94;1m',
+        'bright_magenta': '\033[95;1m',
+        'bright_cyan': '\033[96;1m',
+        'bright_white': '\033[97;1m',
+        
+        # Background colors
+        'bg_red': '\033[41m',
+        'bg_green': '\033[42m',
+        'bg_yellow': '\033[43m',
+        'bg_blue': '\033[44m',
+        'bg_magenta': '\033[45m',
+        'bg_cyan': '\033[46m',
+        'bg_white': '\033[47m',
+        'bg_black': '\033[40m',
+        
+        # Special combinations
+        'gold': '\033[38;5;220m',      # Bright gold
+        'orange': '\033[38;5;208m',    # Bright orange
+        'purple': '\033[38;5;99m',     # Bright purple
+        'pink': '\033[38;5;213m',      # Bright pink
+        'lime': '\033[38;5;154m',      # Bright lime green
+        'sky_blue': '\033[38;5;117m',  # Sky blue
+        'fire_red': '\033[38;5;196m',  # Fire engine red
+        'emerald': '\033[38;5;46m',    # Emerald green
     }
     
-    print(f"{colors['bold']}{colors['cyan']}╔{'═' * 60}╗{colors['reset']}")
-    print(f"{colors['bold']}{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['white']}Welcome to Grid World - Coin Collection with Weapons!{colors['reset']} {colors['cyan']}║{colors['reset']}")
-    print(f"{colors['bold']}{colors['cyan']}║{colors['reset']} {colors['yellow']}Use WASD keys to move:{colors['reset']} {colors['cyan']}║{colors['reset']}")
-    print(f"{colors['bold']}{colors['cyan']}║{colors['reset']} {colors['white']}W = Up, A = Left, S = Down, D = Right{colors['reset']} {colors['cyan']}║{colors['reset']}")
-    print(f"{colors['bold']}{colors['cyan']}║{colors['reset']} {colors['white']}Q = Quit{colors['reset']} {colors['cyan']}║{colors['reset']}")
-    print(f"{colors['bold']}{colors['cyan']}║{colors['reset']} {colors['green']}Objective: Collect coins and weapons to defeat enemies!{colors['reset']} {colors['cyan']}║{colors['reset']}")
-    print(f"{colors['bold']}{colors['cyan']}║{colors['reset']} {colors['blue']}Weapons (W): Give you 10 moves to defeat enemies!{colors['reset']} {colors['cyan']}║{colors['reset']}")
-    print(f"{colors['bold']}{colors['cyan']}╚{'═' * 60}╝{colors['reset']}")
+    # Enhanced welcome screen with vibrant colors
+    print(f"{colors['bold']}{colors['bright_cyan']}╔{'═' * 60}╗{colors['reset']}")
+    print(f"{colors['bold']}{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['bright_white']}🎮 Welcome to Grid World - Coin Collection with Weapons!{colors['reset']} {colors['bright_cyan']}║{colors['reset']}")
+    print(f"{colors['bold']}{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['gold']}🎯 Use WASD keys to move:{colors['reset']} {colors['bright_cyan']}║{colors['reset']}")
+    print(f"{colors['bold']}{colors['bright_cyan']}║{colors['reset']} {colors['bright_white']}W = Up, A = Left, S = Down, D = Right{colors['reset']} {colors['bright_cyan']}║{colors['reset']}")
+    print(f"{colors['bold']}{colors['bright_cyan']}║{colors['reset']} {colors['bright_white']}Q = Quit{colors['reset']} {colors['bright_cyan']}║{colors['reset']}")
+    print(f"{colors['bold']}{colors['bright_cyan']}║{colors['reset']} {colors['bright_green']}🎯 Objective: Collect coins and weapons to defeat enemies!{colors['reset']} {colors['bright_cyan']}║{colors['reset']}")
+    print(f"{colors['bold']}{colors['bright_cyan']}║{colors['reset']} {colors['sky_blue']}⚔️  Weapons (W): Give you 10 moves to defeat enemies!{colors['reset']} {colors['bright_cyan']}║{colors['reset']}")
+    print(f"{colors['bold']}{colors['bright_cyan']}╚{'═' * 60}╝{colors['reset']}")
     print()
     
     while True:
         env.render()
         
-        # Get user input
-        action = input(f"{colors['bold']}{colors['blue']}Enter move (W/A/S/D/Q):{colors['reset']} ").upper()
+        # Enhanced input prompt with vibrant colors
+        action = input(f"{colors['bold']}{colors['bright_blue']}🎮 Enter move (W/A/S/D/Q):{colors['reset']} ").upper()
         
         if action == 'Q':
-            print(f"{colors['bold']}{colors['green']}Thanks for playing!{colors['reset']}")
+            print(f"{colors['bold']}{colors['bright_green']}🎉 Thanks for playing!{colors['reset']}")
             break
         elif action == 'W':
             action_code = 0
@@ -745,7 +831,7 @@ def manual_play():
         elif action == 'A':
             action_code = 3
         else:
-            print(f"{colors['bold']}{colors['red']}Invalid input! Use W/A/S/D to move or Q to quit.{colors['reset']}")
+            print(f"{colors['bold']}{colors['fire_red']}❌ Invalid input! Use W/A/S/D to move or Q to quit.{colors['reset']}")
             continue
         
         observation, reward, terminated, truncated, info = env.step(action_code)
