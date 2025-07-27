@@ -73,7 +73,7 @@ class CoinCollectionAgent:
         self.loss_history = []
         self.coins_collected_history = []
     
-    def get_state_representation(self, grid_state, agent_pos, coins, enemy_positions, weapon_powerups=None, has_weapon=False, weapon_turns_remaining=0):
+    def get_state_representation(self, grid_state, agent_pos, coins, enemy_positions, weapon_powerups=None, has_weapon=False, weapon_turns_remaining=0, weapon_inventory=None):
         """Enhanced state representation for coin collection with weapon powerups"""
         size = grid_state.shape[0]
         
@@ -219,6 +219,11 @@ class CoinCollectionAgent:
         # Weapon status binary
         state_vector.append(1.0 if has_weapon else 0.0)
         
+        # 16. Weapon inventory information (1 new dimension)
+        # Number of weapons in inventory (normalized for unlimited scaling)
+        weapon_inventory_count = len(weapon_inventory) if weapon_inventory else 0
+        state_vector.append(weapon_inventory_count / 10.0)
+        
         return np.array(state_vector, dtype=np.float32)
     
     def remember(self, state, action, reward, next_state, done):
@@ -280,32 +285,34 @@ class CoinCollectionAgent:
                         enemy_collision: bool = False, coin_collected: bool = False,
                         weapon_collected: bool = False, enemy_died: bool = False,
                         has_weapon: bool = False, weapon_turns_remaining: int = 0,
-                        steps: int = 0) -> float:
-        """Enhanced reward function for coin collection with weapon powerups"""
+                        steps: int = 0, weapon_activated: bool = False) -> float:
+        """Simplified reward function for coin collection with weapon powerups and inventory system"""
         
         # Death penalty (immediate termination)
         if enemy_collision:
             return -50.0
         
-        # Weapon collection reward (big reward)
-        if weapon_collected:
-            return 15.0
+        # Weapon activation reward/penalty
+        if weapon_activated:
+            return 10.0  # Reward for successful weapon activation
+        elif action == 4 and not weapon_activated:
+            return -2.0  # Penalty for failed weapon activation attempt
         
-        # Enemy defeat reward (when armed) - higher than coin collection
+        # Weapon collection reward (higher since weapons are more valuable in inventory)
+        if weapon_collected:
+            return 35.0
+        
+        # Enemy defeat reward
         if enemy_died:
-            return 50.0  # Increased from 10.0 - now higher than coin collection (25-44)
+            return 40.0
         
         # Coin collection reward
         if coin_collected:
-            # Bonus for collecting coins quickly
-            step_bonus = max(0, 20 - steps)
-            return 25.0 + step_bonus
+            return 25.0
         
         # All coins collected reward (completion bonus)
         if len(coins) == 0:
-            # Big bonus for completing the level
-            step_bonus = max(0, 100 - steps)
-            return 100.0 + step_bonus
+            return 100.0
         
         # Calculate distances to nearest coin
         if coins:
@@ -319,11 +326,11 @@ class CoinCollectionAgent:
                 new_coin_dist = min(new_coin_dist, new_dist)
             
             # Progress reward - encourage moving toward coins
-            progress_reward = (old_coin_dist - new_coin_dist) * 3.0
+            progress_reward = (old_coin_dist - new_coin_dist) * 2.0
         else:
             progress_reward = 0.0
         
-        # Enemy interaction reward (depends on weapon status)
+        # Simple enemy avoidance
         enemy_reward = 0.0
         if enemy_positions:
             for enemy_pos in enemy_positions:
@@ -331,47 +338,21 @@ class CoinCollectionAgent:
                 new_enemy_dist = abs(new_pos[0] - enemy_pos[0]) + abs(new_pos[1] - enemy_pos[1])
                 
                 if has_weapon and weapon_turns_remaining > 0:
-                    # Armed: much stronger reward for approaching enemies
+                    # Armed: reward for approaching enemies
                     if new_enemy_dist < old_enemy_dist:
-                        enemy_reward += 15.0  # Increased from 5.0 - much bigger reward for moving toward enemies when armed
-                    elif new_enemy_dist > old_enemy_dist:
-                        enemy_reward -= 3.0  # Increased penalty from -1.0 - stronger discouragement for moving away when armed
-                    
-                    # Stronger proximity rewards when armed
-                    if new_enemy_dist <= 1:
-                        enemy_reward += 8.0  # Increased from 2.0 - much bigger bonus for being adjacent when armed
-                    elif new_enemy_dist <= 2:
-                        enemy_reward += 3.0  # New bonus for being close when armed
-                    elif new_enemy_dist <= 3:
-                        enemy_reward += 1.0  # Small bonus for being within 3 steps when armed
+                        enemy_reward += 5.0
                 else:
                     # Unarmed: penalty for approaching enemies
                     if new_enemy_dist < old_enemy_dist:
-                        enemy_reward -= 0.5
-                    elif new_enemy_dist > old_enemy_dist:
-                        enemy_reward += 0.2
-                    
-                    # Additional penalties for being close to enemies when unarmed
-                    if new_enemy_dist <= 1:
-                        enemy_reward -= 2.0  # Penalty for being adjacent when unarmed
-                    elif new_enemy_dist <= 2:
-                        enemy_reward -= 0.5  # Moderate penalty for being close when unarmed
+                        enemy_reward -= 1.0
         
         # Step penalty to encourage efficiency
         step_penalty = -0.1
         
-        # Wall bump penalty (if agent didn't move when it should have)
+        # Wall bump penalty
         wall_penalty = -0.5 if new_pos == old_pos else 0.0
         
-        # Coin proximity bonus (small reward for being near coins)
-        coin_proximity_bonus = 0.0
-        if coins:
-            min_coin_dist = min(abs(new_pos[0] - coin_pos[0]) + abs(new_pos[1] - coin_pos[1]) 
-                              for coin_pos in coins)
-            if min_coin_dist <= 1:
-                coin_proximity_bonus = 0.1  # Small bonus for being adjacent to a coin
-        
-        total_reward = progress_reward + enemy_reward + step_penalty + wall_penalty + coin_proximity_bonus
+        total_reward = progress_reward + enemy_reward + step_penalty + wall_penalty
         
         return total_reward
     
@@ -471,24 +452,26 @@ def train_coin_collection_agent(episodes: int = None, render_every: int = 1000,
     # Create environment
     env = GridWorld(size=env_size, seed=seed)
     
-    # Calculate state size based on enhanced representation with weapon powerups
+    # Calculate state size based on enhanced representation with weapon powerups and inventory
     # 2 (agent) + 2 (closest_coin) + 2 (closest_enemy) + 1 (coin_dist) + 1 (enemy_dist) 
     # + 2 (coin_dir) + 2 (enemy_dir) + 1 (num_coins) + 1 (num_enemies) + 1 (coin_density) 
-    # + 1 (enemy_density) + 75 (5x5 local grid * 3 features) + 4 (weapon powerup info)
-    # Total: 2+2+2+1+1+2+2+1+1+1+1+75+4 = 96
-    state_size = 96
+    # + 1 (enemy_density) + 75 (5x5 local grid * 3 features) + 4 (weapon powerup info) + 1 (weapon_inventory)
+    # Total: 2+2+2+1+1+2+2+1+1+1+1+75+4+1 = 97
+    state_size = 97
     
     # Create agent
     agent = CoinCollectionAgent(
         state_size=state_size,
-        action_size=4,  # 4 actions: up, right, down, left
+        action_size=5,  # 5 actions: up, right, down, left, activate_weapon
 
     )
     
-    print(f"🎮 Training Coin Collection Agent with Weapon Powerups")
+    print(f"🎮 Training Coin Collection Agent with Weapon Powerups and Inventory System")
     print(f"   Environment: {env_size}x{env_size} grid")
     print(f"   State size: {state_size}")
-    print(f"   Episodes: {'Infinite' if episodes is None else episodes}")
+    print(f"   Action size: 5 (up, right, down, left, activate_weapon)")
+    print(f"   Episodes: {'Infinite (press Ctrl+C to stop)' if episodes is None else episodes}")
+    print(f"   Save every: {save_every} episodes")
     print("=" * 50)
     
     episode = 0
@@ -508,35 +491,66 @@ def train_coin_collection_agent(episodes: int = None, render_every: int = 1000,
             weapon_powerups = info.get('weapon_powerups', [])
             has_weapon = info.get('has_weapon', False)
             weapon_turns_remaining = info.get('weapon_turns_remaining', 0)
+            weapon_inventory = info.get('weapon_inventory', [])
             state = agent.get_state_representation(grid_state, agent_pos, coins, enemy_positions, 
-                                                 weapon_powerups, has_weapon, weapon_turns_remaining)
+                                                 weapon_powerups, has_weapon, weapon_turns_remaining, weapon_inventory)
             old_pos = agent_pos.copy()
             
             while True:
                 action = agent.act(state, training=True)
-                next_observation, env_reward, terminated, truncated, info = env.step(action)
                 
-                # Get new state
-                new_grid_state = env.grid
-                new_agent_pos = info['agent_pos']
-                new_coins = info['coins']
-                new_enemy_positions = info.get('enemy_pos', [])
-                new_weapon_powerups = info.get('weapon_powerups', [])
-                new_has_weapon = info.get('has_weapon', False)
-                new_weapon_turns_remaining = info.get('weapon_turns_remaining', 0)
-                next_state = agent.get_state_representation(new_grid_state, new_agent_pos, new_coins, 
-                                                          new_enemy_positions, new_weapon_powerups,
-                                                          new_has_weapon, new_weapon_turns_remaining)
-                
-                # Calculate reward using enhanced function
-                enemy_collision = info.get('enemy_collision', False)
-                coin_collected = info.get('coin_collected', False)
-                weapon_collected = info.get('weapon_collected', False)
-                enemy_died = info.get('enemy_died', False)
-                reward = agent.calculate_reward(action, new_agent_pos, old_pos, 
-                                              new_coins, new_enemy_positions, 
-                                              enemy_collision, coin_collected, weapon_collected,
-                                              enemy_died, new_has_weapon, new_weapon_turns_remaining, steps)
+                # Handle weapon activation (action 4)
+                if action == 4:
+                    weapon_activated = env.activate_weapon()
+                    # For weapon activation, we don't move, so use current environment state
+                    new_agent_pos = env.agent_pos.copy()
+                    new_coins = env.coins.copy()
+                    new_enemy_positions = env.enemy_positions.copy()
+                    new_weapon_powerups = env.weapon_powerups.copy()
+                    new_has_weapon = env.has_weapon
+                    new_weapon_turns_remaining = env.weapon_turns_remaining
+                    new_weapon_inventory = env.weapon_inventory
+                    
+                    # Calculate reward for weapon activation
+                    reward = agent.calculate_reward(action, new_agent_pos, old_pos, 
+                                                  new_coins, new_enemy_positions, 
+                                                  False, False, False, False,
+                                                  new_has_weapon, new_weapon_turns_remaining, steps, weapon_activated)
+                    
+                    # Get next state
+                    next_state = agent.get_state_representation(env.grid, new_agent_pos, new_coins, 
+                                                              new_enemy_positions, new_weapon_powerups,
+                                                              new_has_weapon, new_weapon_turns_remaining, new_weapon_inventory)
+                    
+                    # Don't terminate for weapon activation
+                    terminated = False
+                    truncated = False
+                else:
+                    # Normal movement action (0-3)
+                    next_observation, env_reward, terminated, truncated, info = env.step(action)
+                    
+                    # Get new state
+                    new_grid_state = env.grid
+                    new_agent_pos = info['agent_pos']
+                    new_coins = info['coins']
+                    new_enemy_positions = info.get('enemy_pos', [])
+                    new_weapon_powerups = info.get('weapon_powerups', [])
+                    new_has_weapon = info.get('has_weapon', False)
+                    new_weapon_turns_remaining = info.get('weapon_turns_remaining', 0)
+                    new_weapon_inventory = info.get('weapon_inventory', [])
+                    next_state = agent.get_state_representation(new_grid_state, new_agent_pos, new_coins, 
+                                                              new_enemy_positions, new_weapon_powerups,
+                                                              new_has_weapon, new_weapon_turns_remaining, new_weapon_inventory)
+                    
+                    # Calculate reward using enhanced function
+                    enemy_collision = info.get('enemy_collision', False)
+                    coin_collected = info.get('coin_collected', False)
+                    weapon_collected = info.get('weapon_collected', False)
+                    enemy_died = info.get('enemy_died', False)
+                    reward = agent.calculate_reward(action, new_agent_pos, old_pos, 
+                                                  new_coins, new_enemy_positions, 
+                                                  enemy_collision, coin_collected, weapon_collected,
+                                                  enemy_died, new_has_weapon, new_weapon_turns_remaining, steps)
                 
                 done = terminated or truncated
                 agent.remember(state, action, reward, next_state, done)
@@ -622,7 +636,7 @@ def test_coin_collection_agent(agent, episodes: int = 10, render: bool = True):
     
     env = GridWorld(size=10)
     
-    print(f"\n🧪 Testing Coin Collection Agent with Weapon Powerups for {episodes} episodes...")
+    print(f"\n🧪 Testing Coin Collection Agent with Weapon Powerups and Inventory System for {episodes} episodes...")
     print("=" * 60)
     
     success_count = 0
@@ -643,14 +657,25 @@ def test_coin_collection_agent(agent, episodes: int = 10, render: bool = True):
         weapon_powerups = info.get('weapon_powerups', [])
         has_weapon = info.get('has_weapon', False)
         weapon_turns_remaining = info.get('weapon_turns_remaining', 0)
+        weapon_inventory = info.get('weapon_inventory', [])
         state = agent.get_state_representation(grid_state, agent_pos, coins, enemy_positions,
-                                             weapon_powerups, has_weapon, weapon_turns_remaining)
+                                             weapon_powerups, has_weapon, weapon_turns_remaining, weapon_inventory)
         old_pos = agent_pos.copy()
         
         print(f"\nEpisode {episode + 1}:")
         
         while True:
             action = agent.act(state, training=False)
+            
+            # Handle weapon activation (action 4)
+            if action == 4:
+                weapon_activated = env.activate_weapon()
+                if weapon_activated:
+                    print("⚔️  Weapon activated!")
+                else:
+                    print("⚠️  No weapons to activate or weapon already active!")
+                continue
+            
             next_observation, env_reward, terminated, truncated, info = env.step(action)
             
             new_grid_state = env.grid
@@ -660,9 +685,10 @@ def test_coin_collection_agent(agent, episodes: int = 10, render: bool = True):
             new_weapon_powerups = info.get('weapon_powerups', [])
             new_has_weapon = info.get('has_weapon', False)
             new_weapon_turns_remaining = info.get('weapon_turns_remaining', 0)
+            new_weapon_inventory = info.get('weapon_inventory', [])
             next_state = agent.get_state_representation(new_grid_state, new_agent_pos, new_coins,
                                                       new_enemy_positions, new_weapon_powerups,
-                                                      new_has_weapon, new_weapon_turns_remaining)
+                                                      new_has_weapon, new_weapon_turns_remaining, new_weapon_inventory)
             
             enemy_collision = info.get('enemy_collision', False)
             coin_collected = info.get('coin_collected', False)
@@ -706,8 +732,8 @@ def test_coin_collection_agent(agent, episodes: int = 10, render: bool = True):
     return success_count, total_rewards, total_steps
 
 if __name__ == "__main__":
-    # Train the agent
-    agent = train_coin_collection_agent(episodes=5000, render_every=1000)
+    # Train the agent indefinitely (press Ctrl+C to stop)
+    agent = train_coin_collection_agent(episodes=None, render_every=1000)
     
-    # Test the agent
-    test_coin_collection_agent(agent, episodes=5, render=True) 
+    # Test the agent (commented out - run manually if needed)
+    # test_coin_collection_agent(agent, episodes=5, render=True) 

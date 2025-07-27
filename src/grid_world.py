@@ -17,7 +17,12 @@ class GridWorld:
         self.seed = seed
         self.coins_collected = 0  # Track collected coins
         
-        # Weapon powerup system
+        # Weapon inventory system
+        self.weapon_inventory = []  # List of weapons: [{"turns": 10}, {"turns": 10}, ...]
+        self.max_weapons = 5  # Maximum weapons that can be carried
+        self.active_weapon = None  # Currently active weapon (if any)
+        
+        # Legacy weapon system (for backward compatibility)
         self.weapon_powerups = []  # List of weapon powerup positions
         self.has_weapon = False
         self.weapon_turns_remaining = 0
@@ -382,17 +387,32 @@ class GridWorld:
         
         return False
     
+    def activate_weapon(self):
+        """Activate the next weapon in inventory"""
+        if not self.weapon_inventory:
+            return False  # No weapons to activate
+        
+        # If no weapon is currently active, activate the first one
+        if self.active_weapon is None:
+            self.active_weapon = self.weapon_inventory.pop(0)
+            self.has_weapon = True
+            self.weapon_turns_remaining = self.active_weapon["turns"]
+            return True
+        
+        # If a weapon is already active, don't activate another one
+        return False
+    
     def _check_weapon_collection(self) -> bool:
-        """Check if agent collected a weapon powerup"""
+        """Check if agent collected a weapon powerup and add to inventory"""
         agent_row, agent_col = self.agent_pos
         
         for i, weapon_pos in enumerate(self.weapon_powerups):
             if weapon_pos[0] == agent_row and weapon_pos[1] == agent_col:
-                # Remove weapon powerup
+                # Remove weapon powerup from grid
                 self.weapon_powerups.pop(i)
-                # Activate weapon
-                self.has_weapon = True
-                self.weapon_turns_remaining = self.weapon_duration
+                
+                # Add to inventory (no capacity limit)
+                self.weapon_inventory.append({"turns": self.weapon_duration})
                 return True
         
         return False
@@ -439,22 +459,28 @@ class GridWorld:
         self.weapon_powerups = []
         self.has_weapon = False
         self.weapon_turns_remaining = 0
+        self.weapon_inventory = []  # Reset weapon inventory
+        self.active_weapon = None   # Reset active weapon
         self._initialize_grid()
         
         # Check initial conditions
         enemy_collision = self._check_enemy_collision()
         
         info = {
+            'steps': self.steps,
             'agent_pos': self.agent_pos,
             'coins': self.coins,
             'enemy_pos': self.enemy_positions,
             'weapon_powerups': self.weapon_powerups,
             'has_weapon': self.has_weapon,
             'weapon_turns_remaining': self.weapon_turns_remaining,
+            'weapon_inventory': self.weapon_inventory,  # New inventory system
+            'active_weapon': self.active_weapon,        # Currently active weapon
+            'max_weapons': self.max_weapons,            # Max inventory capacity
             'coins_collected': self.coins_collected,
-            'total_coins': len(self.coins),
-            'steps': self.steps,
-            'enemy_collision': enemy_collision
+            'total_coins': len(self.coins) + self.coins_collected,
+            'enemy_collision': enemy_collision,
+            'all_coins_collected': len(self.coins) == 0
         }
         
         return self._get_state(), info
@@ -519,6 +545,7 @@ class GridWorld:
             # Check if weapon expired
             if self.weapon_turns_remaining <= 0:
                 self.has_weapon = False
+                self.active_weapon = None  # Clear active weapon when expired
 
         # Move enemies after agent moves
         self._move_enemies()
@@ -561,6 +588,9 @@ class GridWorld:
             'weapon_powerups': self.weapon_powerups,
             'has_weapon': self.has_weapon,
             'weapon_turns_remaining': self.weapon_turns_remaining,
+            'weapon_inventory': self.weapon_inventory,  # New inventory system
+            'active_weapon': self.active_weapon,        # Currently active weapon
+            'max_weapons': self.max_weapons,            # Max inventory capacity
             'coins_collected': self.coins_collected,
             'total_coins': len(self.coins) + self.coins_collected,
             'coin_collected': coin_collected,
@@ -707,13 +737,10 @@ class GridWorld:
         print(f"{colors['bright_cyan']}║{colors['reset']} {legend_line}")
         print(f"{colors['bright_cyan']}║{colors['reset']}")
         
-        # Enhanced game info with better color coding
-        print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['bright_green']}🤖 Agent Position:{colors['reset']} {colors['bright_white']}{self.agent_pos}{colors['reset']}")
-        print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['gold']}💰 Coins Remaining:{colors['reset']} {colors['bright_white']}{len(self.coins)}{colors['reset']}")
-        print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['gold']}💎 Coins Collected:{colors['reset']} {colors['bright_white']}{self.coins_collected}{colors['reset']}")
-        print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['fire_red']}👹 Enemy Positions:{colors['reset']} {colors['bright_white']}{self.enemy_positions}{colors['reset']}")
-        print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['fire_red']}👻 Number of Enemies:{colors['reset']} {colors['bright_white']}{len(self.enemy_positions)}{colors['reset']}")
-        print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['sky_blue']}⚔️  Weapon Powerups:{colors['reset']} {colors['bright_white']}{self.weapon_powerups}{colors['reset']}")
+        # Weapon inventory display
+        inventory_count = len(self.weapon_inventory)
+        inventory_display = "⚔️" * inventory_count
+        print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['bright_blue']}🎒 Weapon Inventory:{colors['reset']} {colors['bright_white']}[{inventory_display}] ({inventory_count}){colors['reset']}")
         
         # Enhanced weapon status
         if self.has_weapon and self.weapon_turns_remaining > 0:
@@ -722,28 +749,6 @@ class GridWorld:
         else:
             print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['gray']}⚔️  Weapon Status:{colors['reset']} {colors['bright_white']}None{colors['reset']}")
         
-        # Calculate distances with enhanced warnings
-        distance_to_nearest_coin = self.get_distance_to_nearest_coin()
-        closest_enemy_distance = float('inf')
-        for enemy_pos in self.enemy_positions:
-            enemy_dist = abs(self.agent_pos[0] - enemy_pos[0]) + abs(self.agent_pos[1] - enemy_pos[1])
-            closest_enemy_distance = min(closest_enemy_distance, enemy_dist)
-        
-        print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['gold']}📏 Distance to Nearest Coin:{colors['reset']} {colors['bright_white']}{distance_to_nearest_coin}{colors['reset']}")
-        print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['fire_red']}📏 Distance to Closest Enemy:{colors['reset']} {colors['bright_white']}{closest_enemy_distance}{colors['reset']}")
-        
-        # Enhanced warnings with better visual impact
-        if closest_enemy_distance <= 2:
-            warning_color = colors['orange'] if closest_enemy_distance == 2 else colors['bright_yellow']
-            print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{warning_color}⚠️  WARNING: Enemy nearby!{colors['reset']}")
-        
-        if closest_enemy_distance <= 1:
-            if self.has_weapon and self.weapon_turns_remaining > 0:
-                print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['bright_blue']}⚔️  ATTACK: You can defeat this enemy!{colors['reset']}")
-            else:
-                print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['fire_red']}💥 DANGER: Enemy can catch you!{colors['reset']}")
-        
-        print(f"{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['bright_blue']}🎮 Valid Actions:{colors['reset']} {colors['bright_white']}{self.get_valid_actions()}{colors['reset']}")
         print(f"{colors['bold']}{colors['bright_cyan']}╚{'═' * (self.size * 4 + 2)}╝{colors['reset']}")
         print()
 
@@ -807,9 +812,9 @@ def manual_play():
     print(f"{colors['bold']}{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['bright_white']}🎮 Welcome to Grid World - Coin Collection with Weapons!{colors['reset']} {colors['bright_cyan']}║{colors['reset']}")
     print(f"{colors['bold']}{colors['bright_cyan']}║{colors['reset']} {colors['bold']}{colors['gold']}🎯 Use WASD keys to move:{colors['reset']} {colors['bright_cyan']}║{colors['reset']}")
     print(f"{colors['bold']}{colors['bright_cyan']}║{colors['reset']} {colors['bright_white']}W = Up, A = Left, S = Down, D = Right{colors['reset']} {colors['bright_cyan']}║{colors['reset']}")
-    print(f"{colors['bold']}{colors['bright_cyan']}║{colors['reset']} {colors['bright_white']}Q = Quit{colors['reset']} {colors['bright_cyan']}║{colors['reset']}")
+    print(f"{colors['bold']}{colors['bright_cyan']}║{colors['reset']} {colors['bright_white']}P = Activate Weapon, Q = Quit{colors['reset']} {colors['bright_cyan']}║{colors['reset']}")
     print(f"{colors['bold']}{colors['bright_cyan']}║{colors['reset']} {colors['bright_green']}🎯 Objective: Collect coins and weapons to defeat enemies!{colors['reset']} {colors['bright_cyan']}║{colors['reset']}")
-    print(f"{colors['bold']}{colors['bright_cyan']}║{colors['reset']} {colors['sky_blue']}⚔️  Weapons (W): Give you 10 moves to defeat enemies!{colors['reset']} {colors['bright_cyan']}║{colors['reset']}")
+    print(f"{colors['bold']}{colors['bright_cyan']}║{colors['reset']} {colors['sky_blue']}⚔️  Collect weapons (W) and press P to activate them!{colors['reset']} {colors['bright_cyan']}║{colors['reset']}")
     print(f"{colors['bold']}{colors['bright_cyan']}╚{'═' * 60}╝{colors['reset']}")
     print()
     
@@ -817,11 +822,21 @@ def manual_play():
         env.render()
         
         # Enhanced input prompt with vibrant colors
-        action = input(f"{colors['bold']}{colors['bright_blue']}🎮 Enter move (W/A/S/D/Q):{colors['reset']} ").upper()
+        action = input(f"{colors['bold']}{colors['bright_blue']}🎮 Enter move (W/A/S/D/P/Q):{colors['reset']} ").upper()
         
         if action == 'Q':
             print(f"{colors['bold']}{colors['bright_green']}🎉 Thanks for playing!{colors['reset']}")
             break
+        elif action == 'P':
+            # Activate weapon from inventory
+            if env.activate_weapon():
+                print(f"{colors['bold']}{colors['bright_blue']}⚔️  Weapon activated! {env.weapon_turns_remaining} turns remaining.{colors['reset']}")
+            else:
+                if not env.weapon_inventory:
+                    print(f"{colors['bold']}{colors['orange']}⚠️  No weapons in inventory!{colors['reset']}")
+                elif env.has_weapon:
+                    print(f"{colors['bold']}{colors['orange']}⚠️  Weapon already active! Wait for it to expire.{colors['reset']}")
+            continue
         elif action == 'W':
             action_code = 0
         elif action == 'D':
@@ -831,18 +846,18 @@ def manual_play():
         elif action == 'A':
             action_code = 3
         else:
-            print(f"{colors['bold']}{colors['fire_red']}❌ Invalid input! Use W/A/S/D to move or Q to quit.{colors['reset']}")
+            print(f"{colors['bold']}{colors['fire_red']}❌ Invalid input! Use W/A/S/D to move, P to activate weapon, or Q to quit.{colors['reset']}")
             continue
         
         observation, reward, terminated, truncated, info = env.step(action_code)
         
         # Show feedback for weapon collection
         if info.get('weapon_collected', False):
-            print(f"{colors['bold']}{colors['blue']}⚔️  Weapon collected! You can now defeat enemies!{colors['reset']}")
+            print(f"{colors['bold']}{colors['bright_blue']}⚔️  Weapon added to inventory! Press P to activate.{colors['reset']}")
         
         # Show feedback for enemy defeat
         if info.get('enemy_died', False):
-            print(f"{colors['bold']}{colors['green']}💀 Enemy defeated! {info.get('weapon_turns_remaining', 0)} weapon turns remaining.{colors['reset']}")
+            print(f"{colors['bold']}{colors['bright_green']}💀 Enemy defeated! {info.get('weapon_turns_remaining', 0)} weapon turns remaining.{colors['reset']}")
         
         if terminated or truncated:
             env.render()

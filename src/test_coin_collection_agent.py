@@ -376,14 +376,48 @@ def main():
         weapon_powerups = info.get('weapon_powerups', [])
         has_weapon = info.get('has_weapon', False)
         weapon_turns_remaining = info.get('weapon_turns_remaining', 0)
+        weapon_inventory = info.get('weapon_inventory', [])
         state = agent.get_state_representation(grid_state, agent_pos, coins, enemy_positions,
-                                             weapon_powerups, has_weapon, weapon_turns_remaining)
+                                             weapon_powerups, has_weapon, weapon_turns_remaining, weapon_inventory)
         old_pos = agent_pos.copy()
         
         print(f"\nEpisode {episode + 1}:")
         
         while True:
             action = agent.act(state, training=False)
+            
+            # Handle weapon activation (action 4)
+            if action == 4:
+                weapon_activated = env.activate_weapon()
+                if weapon_activated:
+                    print("⚔️  Weapon activated!")
+                else:
+                    print("⚠️  No weapons to activate or weapon already active!")
+                
+                # Update state even when weapon activation fails to prevent infinite loop
+                new_grid_state = env.grid
+                new_agent_pos = info['agent_pos']
+                new_coins = info['coins']
+                new_enemy_positions = info.get('enemy_pos', [])
+                new_weapon_powerups = info.get('weapon_powerups', [])
+                new_has_weapon = info.get('has_weapon', False)
+                new_weapon_turns_remaining = info.get('weapon_turns_remaining', 0)
+                new_weapon_inventory = info.get('weapon_inventory', [])
+                next_state = agent.get_state_representation(new_grid_state, new_agent_pos, new_coins, new_enemy_positions,
+                                                         new_weapon_powerups, new_has_weapon, new_weapon_turns_remaining, new_weapon_inventory)
+                
+                # Calculate reward for weapon activation attempt
+                reward = agent.calculate_reward(action, new_agent_pos, old_pos, 
+                                              new_coins, new_enemy_positions, 
+                                              False, False, False, False,
+                                              new_has_weapon, new_weapon_turns_remaining, steps, weapon_activated)
+                
+                total_reward += reward
+                steps += 1
+                state = next_state
+                old_pos = new_agent_pos.copy()
+                continue
+            
             next_observation, env_reward, terminated, truncated, info = env.step(action)
             
             new_grid_state = env.grid
@@ -393,8 +427,9 @@ def main():
             new_weapon_powerups = info.get('weapon_powerups', [])
             new_has_weapon = info.get('has_weapon', False)
             new_weapon_turns_remaining = info.get('weapon_turns_remaining', 0)
+            new_weapon_inventory = info.get('weapon_inventory', [])
             next_state = agent.get_state_representation(new_grid_state, new_agent_pos, new_coins, new_enemy_positions,
-                                                         new_weapon_powerups, new_has_weapon, new_weapon_turns_remaining)
+                                                         new_weapon_powerups, new_has_weapon, new_weapon_turns_remaining, new_weapon_inventory)
             
             enemy_collision = info.get('enemy_collision', False)
             coin_collected = info.get('coin_collected', False)
