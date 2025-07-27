@@ -18,11 +18,11 @@ class CustomGridWorld(GridWorld):
     
     def __init__(self, size: int = 10, max_steps: int = 50, seed: Optional[int] = None,
                  obstacle_range: tuple = (2, 4), coin_range: tuple = (3, 6), 
-                 enemy_range: tuple = (1, 2), weapon_powerup_range: tuple = (1, 2)):
+                 enemy_range: tuple = (1, 2), powerup_powerup_range: tuple = (1, 2)):
         self.obstacle_range = obstacle_range
         self.coin_range = coin_range
         self.enemy_range = enemy_range
-        self.weapon_powerup_range = weapon_powerup_range
+        self.powerup_powerup_range = powerup_powerup_range
         super().__init__(size, max_steps, seed)
     
     def _initialize_grid(self):
@@ -39,7 +39,7 @@ class CustomGridWorld(GridWorld):
         self._place_enemies()
         
         # Place weapon powerups
-        self._place_weapon_powerups()
+        self._place_powerup_powerups()
         
         # Add obstacles with DFS validation
         max_attempts = 100  # Prevent infinite loops
@@ -54,7 +54,7 @@ class CustomGridWorld(GridWorld):
             # Re-place coins, enemies, and weapon powerups
             self._place_coins()
             self._place_enemies()
-            self._place_weapon_powerups()
+            self._place_powerup_powerups()
             
             # Add random obstacles using custom range
             num_obstacles = random.randint(self.obstacle_range[0], self.obstacle_range[1])
@@ -64,7 +64,7 @@ class CustomGridWorld(GridWorld):
                     if (obstacle_pos != self.agent_pos and 
                         obstacle_pos not in self.coins and
                         obstacle_pos not in self.enemy_positions and 
-                        obstacle_pos not in self.weapon_powerups and
+                        obstacle_pos not in self.powerup_powerups and
                         obstacle_pos not in self.obstacles):
                         self.obstacles.append(obstacle_pos)
                         self.grid[obstacle_pos[0], obstacle_pos[1]] = 3
@@ -191,25 +191,25 @@ class CustomGridWorld(GridWorld):
                     self.enemy_positions.append([1, 1])
                     self.grid[1, 1] = 5
     
-    def _place_weapon_powerups(self):
-        """Place weapon powerups at random positions using custom range"""
-        num_weapons = random.randint(self.weapon_powerup_range[0], self.weapon_powerup_range[1])
-        self.weapon_powerups = []
+    def _place_powerup_powerups(self):
+        """Place powerup powerups at random positions using custom range"""
+        num_powerups = random.randint(self.powerup_powerup_range[0], self.powerup_powerup_range[1])
+        self.powerup_powerups = []
         
-        for _ in range(num_weapons):
+        for _ in range(num_powerups):
             max_attempts = 50
             attempts = 0
             
             while attempts < max_attempts:
-                weapon_row = random.randint(0, self.size - 1)
-                weapon_col = random.randint(0, self.size - 1)
-                weapon_pos = [weapon_row, weapon_col]
+                powerup_row = random.randint(0, self.size - 1)
+                powerup_col = random.randint(0, self.size - 1)
+                powerup_pos = [powerup_row, powerup_col]
                 
-                # Simple placement: just avoid agent position and other weapons
-                if (weapon_pos != self.agent_pos and 
-                    weapon_pos not in self.weapon_powerups):
-                    self.weapon_powerups.append(weapon_pos)
-                    self.grid[weapon_pos[0], weapon_pos[1]] = 6
+                # Simple placement: just avoid agent position and other powerups
+                if (powerup_pos != self.agent_pos and 
+                    powerup_pos not in self.powerup_powerups):
+                    self.powerup_powerups.append(powerup_pos)
+                    self.grid[powerup_pos[0], powerup_pos[1]] = 6
                     break
                 
                 attempts += 1
@@ -224,13 +224,13 @@ class CustomGridWorld(GridWorld):
                 
                 for pos in fallback_positions:
                     if (pos != self.agent_pos and 
-                        pos not in self.weapon_powerups):
-                        self.weapon_powerups.append(pos)
+                        pos not in self.powerup_powerups):
+                        self.powerup_powerups.append(pos)
                         self.grid[pos[0], pos[1]] = 6
                         break
                 else:
                     # Last resort: place somewhere random
-                    self.weapon_powerups.append([2, 2])
+                    self.powerup_powerups.append([2, 2])
                     self.grid[2, 2] = 6
 
     def _create_simple_path(self):
@@ -242,7 +242,7 @@ class CustomGridWorld(GridWorld):
         # Re-place coins, enemies, and weapon powerups
         self._place_coins()
         self._place_enemies()
-        self._place_weapon_powerups()
+        self._place_powerup_powerups()
         
         # Add minimal obstacles that don't block the path
         # For a 5x5 grid, we can add obstacles in corners or edges
@@ -255,7 +255,7 @@ class CustomGridWorld(GridWorld):
         selected_obstacles = random.sample(safe_positions, num_obstacles)
         
         for pos in selected_obstacles:
-            if pos not in self.coins and pos not in self.enemy_positions and pos not in self.weapon_powerups:
+            if pos not in self.coins and pos not in self.enemy_positions and pos not in self.powerup_powerups:
                 self.obstacles.append(pos)
                 self.grid[pos[0], pos[1]] = 3
 
@@ -329,7 +329,7 @@ def main():
     obstacle_range = get_range_input("Obstacle range (min,max) [2,4]: ", 2, 4)
     coin_range = get_range_input("Coin range (min,max) [3,6]: ", 3, 6)
     enemy_range = get_range_input("Enemy range (min,max) [1,2]: ", 1, 2)
-    weapon_powerup_range = get_range_input("Weapon powerup range (min,max) [1,2]: ", 1, 2)
+    powerup_powerup_range = get_range_input("Powerup powerup range (min,max) [1,2]: ", 1, 2)
     
     try:
         max_steps = int(input("Max steps per episode [50]: ") or 50)
@@ -347,7 +347,7 @@ def main():
     print(f"  Obstacles: {obstacle_range[0]}-{obstacle_range[1]}")
     print(f"  Coins: {coin_range[0]}-{coin_range[1]}")
     print(f"  Enemies: {enemy_range[0]}-{enemy_range[1]}")
-    print(f"  Weapon Powerups: {weapon_powerup_range[0]}-{weapon_powerup_range[1]}")
+    print(f"  Powerups: {powerup_powerup_range[0]}-{powerup_powerup_range[1]}")
     print(f"  Max steps: {max_steps}")
     
     # Create custom environment with specified parameters
@@ -357,7 +357,7 @@ def main():
         obstacle_range=obstacle_range,
         coin_range=coin_range,
         enemy_range=enemy_range,
-        weapon_powerup_range=weapon_powerup_range
+        powerup_powerup_range=powerup_powerup_range
     )
 
     success_count = 0
@@ -373,11 +373,11 @@ def main():
         agent_pos = info['agent_pos']
         coins = info['coins']
         enemy_positions = info.get('enemy_pos', [])
-        weapon_powerups = info.get('weapon_powerups', [])
-        has_weapon = info.get('has_weapon', False)
-        weapon_turns_remaining = info.get('weapon_turns_remaining', 0)
+        powerup_powerups = info.get('powerup_powerups', [])
+        has_powerup = info.get('has_powerup', False)
+        powerup_turns_remaining = info.get('powerup_turns_remaining', 0)
         state = agent.get_state_representation(grid_state, agent_pos, coins, enemy_positions,
-                                             weapon_powerups, has_weapon, weapon_turns_remaining)
+                                             powerup_powerups, has_powerup, powerup_turns_remaining)
         old_pos = agent_pos.copy()
         
         print(f"\nEpisode {episode + 1}:")
@@ -390,20 +390,20 @@ def main():
             new_agent_pos = info['agent_pos']
             new_coins = info['coins']
             new_enemy_positions = info.get('enemy_pos', [])
-            new_weapon_powerups = info.get('weapon_powerups', [])
-            new_has_weapon = info.get('has_weapon', False)
-            new_weapon_turns_remaining = info.get('weapon_turns_remaining', 0)
+            new_powerup_powerups = info.get('powerup_powerups', [])
+            new_has_powerup = info.get('has_powerup', False)
+            new_powerup_turns_remaining = info.get('powerup_turns_remaining', 0)
             next_state = agent.get_state_representation(new_grid_state, new_agent_pos, new_coins, new_enemy_positions,
-                                                         new_weapon_powerups, new_has_weapon, new_weapon_turns_remaining)
+                                                         new_powerup_powerups, new_has_powerup, new_powerup_turns_remaining)
             
             enemy_collision = info.get('enemy_collision', False)
             coin_collected = info.get('coin_collected', False)
-            weapon_collected = info.get('weapon_collected', False)
+            powerup_collected = info.get('powerup_collected', False)
             enemy_died = info.get('enemy_died', False)
             reward = agent.calculate_reward(action, new_agent_pos, old_pos, 
                                           new_coins, new_enemy_positions, 
-                                          enemy_collision, coin_collected, weapon_collected,
-                                          enemy_died, new_has_weapon, new_weapon_turns_remaining, steps)
+                                          enemy_collision, coin_collected, powerup_collected,
+                                          enemy_died, new_has_powerup, new_powerup_turns_remaining, steps)
             
             total_reward += reward
             steps += 1

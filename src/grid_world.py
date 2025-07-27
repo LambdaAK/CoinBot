@@ -17,11 +17,11 @@ class GridWorld:
         self.seed = seed
         self.coins_collected = 0  # Track collected coins
         
-        # Weapon powerup system
-        self.weapon_powerups = []  # List of weapon powerup positions
-        self.has_weapon = False
-        self.weapon_turns_remaining = 0
-        self.weapon_duration = 10  # Number of turns weapon lasts
+        # Powerup powerup system
+        self.powerup_powerups = []  # List of powerup powerup positions
+        self.has_powerup = False
+        self.powerup_turns_remaining = 0
+        self.powerup_duration = 10  # Number of turns powerup lasts
         
         # RL environment properties
         self.action_space = 4  # 0=up, 1=right, 2=down, 3=left
@@ -36,7 +36,7 @@ class GridWorld:
             3: "X",  # Obstacle
             4: "★",  # Reward
             5: "E",  # Enemy
-            6: "W", # Weapon powerup
+            6: "P", # Powerup powerup
         }
         
         # Set seed for reproducibility
@@ -79,7 +79,7 @@ class GridWorld:
         return False
     
     def _initialize_grid(self):
-        """Initialize the grid with agent, coins, enemies, obstacles, and weapon powerups"""
+        """Initialize the grid with agent, coins, enemies, obstacles, and powerup powerups"""
         self.grid = np.zeros((self.size, self.size), dtype=int)
         
         # Place agent
@@ -91,8 +91,8 @@ class GridWorld:
         # Place enemies at random positions (not too close to agent or coins)
         self._place_enemies()
         
-        # Place weapon powerups
-        self._place_weapon_powerups()
+        # Place powerup powerups
+        self._place_powerup_powerups()
         
         # Add obstacles with DFS validation
         max_attempts = 100  # Prevent infinite loops
@@ -104,10 +104,10 @@ class GridWorld:
             self.grid = np.zeros((self.size, self.size), dtype=int)
             self.grid[self.agent_pos[0], self.agent_pos[1]] = 1
             
-            # Re-place coins, enemies, and weapon powerups
+            # Re-place coins, enemies, and powerup powerups
             self._place_coins()
             self._place_enemies()
-            self._place_weapon_powerups()
+            self._place_powerup_powerups()
             
             # Add random obstacles
             num_obstacles = random.randint(2, 4)
@@ -117,7 +117,7 @@ class GridWorld:
                     if (obstacle_pos != self.agent_pos and 
                         obstacle_pos not in self.coins and
                         obstacle_pos not in self.enemy_positions and 
-                        obstacle_pos not in self.obstacles):
+                        obstacle_pos not in self.powerup_powerups):
                         self.obstacles.append(obstacle_pos)
                         self.grid[obstacle_pos[0], obstacle_pos[1]] = 3
                         break
@@ -138,10 +138,10 @@ class GridWorld:
         self.grid = np.zeros((self.size, self.size), dtype=int)
         self.grid[self.agent_pos[0], self.agent_pos[1]] = 1
         
-        # Re-place coins, enemies, and weapon powerups
+        # Re-place coins, enemies, and powerup powerups
         self._place_coins()
         self._place_enemies()
-        self._place_weapon_powerups()
+        self._place_powerup_powerups()
         
         # Add minimal obstacles that don't block the path
         # For a 5x5 grid, we can add obstacles in corners or edges
@@ -154,7 +154,7 @@ class GridWorld:
         selected_obstacles = random.sample(safe_positions, num_obstacles)
         
         for pos in selected_obstacles:
-            if pos not in self.coins and pos not in self.enemy_positions and pos not in self.weapon_powerups:
+            if pos not in self.coins and pos not in self.enemy_positions and pos not in self.powerup_powerups:
                 self.obstacles.append(pos)
                 self.grid[pos[0], pos[1]] = 3
     
@@ -269,25 +269,25 @@ class GridWorld:
                     self.enemy_positions.append([1, 1])
                     self.grid[1, 1] = 5
     
-    def _place_weapon_powerups(self):
-        """Place 1-2 weapon powerups at random positions"""
-        num_weapons = random.randint(1, 2)
-        self.weapon_powerups = []
+    def _place_powerup_powerups(self):
+        """Place 1-2 powerup powerups at random positions"""
+        num_powerups = random.randint(1, 2)
+        self.powerup_powerups = []
         
-        for _ in range(num_weapons):
+        for _ in range(num_powerups):
             max_attempts = 50
             attempts = 0
             
             while attempts < max_attempts:
-                weapon_row = random.randint(0, self.size - 1)
-                weapon_col = random.randint(0, self.size - 1)
-                weapon_pos = [weapon_row, weapon_col]
+                powerup_row = random.randint(0, self.size - 1)
+                powerup_col = random.randint(0, self.size - 1)
+                powerup_pos = [powerup_row, powerup_col]
                 
-                # Simple placement: just avoid agent position and other weapons
-                if (weapon_pos != self.agent_pos and 
-                    weapon_pos not in self.weapon_powerups):
-                    self.weapon_powerups.append(weapon_pos)
-                    self.grid[weapon_pos[0], weapon_pos[1]] = 6
+                # Simple placement: just avoid agent position and other powerups
+                if (powerup_pos != self.agent_pos and 
+                    powerup_pos not in self.powerup_powerups):
+                    self.powerup_powerups.append(powerup_pos)
+                    self.grid[powerup_pos[0], powerup_pos[1]] = 6
                     break
                 
                 attempts += 1
@@ -302,13 +302,13 @@ class GridWorld:
                 
                 for pos in fallback_positions:
                     if (pos != self.agent_pos and 
-                        pos not in self.weapon_powerups):
-                        self.weapon_powerups.append(pos)
+                        pos not in self.powerup_powerups):
+                        self.powerup_powerups.append(pos)
                         self.grid[pos[0], pos[1]] = 6
                         break
                 else:
                     # Last resort: place somewhere random
-                    self.weapon_powerups.append([2, 2])
+                    self.powerup_powerups.append([2, 2])
                     self.grid[2, 2] = 6
     
     def _move_enemies(self):
@@ -382,24 +382,24 @@ class GridWorld:
         
         return False
     
-    def _check_weapon_collection(self) -> bool:
-        """Check if agent collected a weapon powerup"""
+    def _check_powerup_collection(self) -> bool:
+        """Check if agent collected a powerup powerup"""
         agent_row, agent_col = self.agent_pos
         
-        for i, weapon_pos in enumerate(self.weapon_powerups):
-            if weapon_pos[0] == agent_row and weapon_pos[1] == agent_col:
-                # Remove weapon powerup
-                self.weapon_powerups.pop(i)
-                # Activate weapon
-                self.has_weapon = True
-                self.weapon_turns_remaining = self.weapon_duration
+        for i, powerup_pos in enumerate(self.powerup_powerups):
+            if powerup_pos[0] == agent_row and powerup_pos[1] == agent_col:
+                # Remove powerup powerup
+                self.powerup_powerups.pop(i)
+                # Activate powerup
+                self.has_powerup = True
+                self.powerup_turns_remaining = self.powerup_duration
                 return True
         
         return False
     
     def _check_enemy_combat(self) -> Tuple[bool, list]:
         """Check if agent fights enemies (when armed) and return (enemy_died, killed_enemies)"""
-        if not self.has_weapon or self.weapon_turns_remaining <= 0:
+        if not self.has_powerup or self.powerup_turns_remaining <= 0:
             return False, []
         
         agent_row, agent_col = self.agent_pos
@@ -418,7 +418,7 @@ class GridWorld:
         for i in reversed(killed_enemies):
             self.enemy_positions.pop(i)
         
-        # Note: Weapon duration is decreased in the step function, not here
+        # Note: Powerup duration is decreased in the step function, not here
         return len(killed_enemies) > 0, killed_enemies
     
     def reset(self, seed: Optional[int] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
@@ -436,9 +436,9 @@ class GridWorld:
         self.steps = 0
         self.coins_collected = 0
         self.obstacles = []
-        self.weapon_powerups = []
-        self.has_weapon = False
-        self.weapon_turns_remaining = 0
+        self.powerup_powerups = []
+        self.has_powerup = False
+        self.powerup_turns_remaining = 0
         self._initialize_grid()
         
         # Check initial conditions
@@ -448,9 +448,9 @@ class GridWorld:
             'agent_pos': self.agent_pos,
             'coins': self.coins,
             'enemy_pos': self.enemy_positions,
-            'weapon_powerups': self.weapon_powerups,
-            'has_weapon': self.has_weapon,
-            'weapon_turns_remaining': self.weapon_turns_remaining,
+            'powerup_powerups': self.powerup_powerups,
+            'has_powerup': self.has_powerup,
+            'powerup_turns_remaining': self.powerup_turns_remaining,
             'coins_collected': self.coins_collected,
             'total_coins': len(self.coins),
             'steps': self.steps,
@@ -506,19 +506,19 @@ class GridWorld:
         # Check for coin collection
         coin_collected = self._check_coin_collection()
         
-        # Check for weapon collection
-        weapon_collected = self._check_weapon_collection()
+        # Check for powerup collection
+        powerup_collected = self._check_powerup_collection()
 
         # Check for enemy combat
         enemy_combat_result = self._check_enemy_combat()
         enemy_died, killed_enemies = enemy_combat_result
 
-        # Decrease weapon duration with each move (if agent has weapon)
-        if self.has_weapon and self.weapon_turns_remaining > 0:
-            self.weapon_turns_remaining -= 1
-            # Check if weapon expired
-            if self.weapon_turns_remaining <= 0:
-                self.has_weapon = False
+        # Decrease powerup duration with each move (if agent has powerup)
+        if self.has_powerup and self.powerup_turns_remaining > 0:
+            self.powerup_turns_remaining -= 1
+            # Check if powerup expired
+            if self.powerup_turns_remaining <= 0:
+                self.has_powerup = False
 
         # Move enemies after agent moves
         self._move_enemies()
@@ -539,7 +539,7 @@ class GridWorld:
         
         # Check for enemy collision (game over condition) - only if not armed
         enemy_collision = False
-        if not self.has_weapon or self.weapon_turns_remaining <= 0:
+        if not self.has_powerup or self.powerup_turns_remaining <= 0:
             enemy_collision = self._check_enemy_collision()
         
         # Check if all coins collected or enemy collision
@@ -558,13 +558,13 @@ class GridWorld:
             'agent_pos': self.agent_pos,
             'coins': self.coins,
             'enemy_pos': self.enemy_positions,
-            'weapon_powerups': self.weapon_powerups,
-            'has_weapon': self.has_weapon,
-            'weapon_turns_remaining': self.weapon_turns_remaining,
+            'powerup_powerups': self.powerup_powerups,
+            'has_powerup': self.has_powerup,
+            'powerup_turns_remaining': self.powerup_turns_remaining,
             'coins_collected': self.coins_collected,
             'total_coins': len(self.coins) + self.coins_collected,
             'coin_collected': coin_collected,
-            'weapon_collected': weapon_collected,
+            'powerup_collected': powerup_collected,
             'enemy_died': enemy_died,
             'killed_enemies': killed_enemies,
             'enemy_collision': enemy_collision,
@@ -631,7 +631,7 @@ class GridWorld:
             3: ("X", colors['gray']),      # Obstacle
             4: ("*", colors['magenta']),   # Reward (not used, but kept for completeness)
             5: ("E", colors['red']),       # Enemy
-            6: ("W", colors['blue']),      # Weapon powerup
+            6: ("P", colors['blue']),      # Powerup powerup
         }
         
         # Header
@@ -659,7 +659,7 @@ class GridWorld:
             (f"{colors['yellow']}C{colors['reset']} Coin", colors['yellow']),  # Ensure bright yellow
             (f"{colors['gray']}X{colors['reset']} Obstacle", colors['gray']),
             (f"{colors['red']}E{colors['reset']} Enemy", colors['red']),
-            (f"{colors['blue']}W{colors['reset']} Weapon", colors['blue']),
+            (f"{colors['blue']}P{colors['reset']} Powerup", colors['blue']),
             (f"{colors['white']}.{colors['reset']} Empty", colors['white'])
         ]
         legend_line = " ".join([f"{item[0]}" for item in legend_items])
@@ -672,13 +672,13 @@ class GridWorld:
         print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['yellow']}Coins Collected:{colors['reset']} {colors['white']}{self.coins_collected}{colors['reset']}")
         print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['red']}Enemy Positions:{colors['reset']} {colors['white']}{self.enemy_positions}{colors['reset']}")
         print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['red']}Number of Enemies:{colors['reset']} {colors['white']}{len(self.enemy_positions)}{colors['reset']}")
-        print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['blue']}Weapon Powerups:{colors['reset']} {colors['white']}{self.weapon_powerups}{colors['reset']}")
+        print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['blue']}Powerup Powerups:{colors['reset']} {colors['white']}{self.powerup_powerups}{colors['reset']}")
         
-        # Weapon status
-        if self.has_weapon and self.weapon_turns_remaining > 0:
-            print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['blue']}Weapon Active:{colors['reset']} {colors['white']}{self.weapon_turns_remaining} turns remaining{colors['reset']}")
+        # Powerup status
+        if self.has_powerup and self.powerup_turns_remaining > 0:
+            print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['blue']}Powerup Active:{colors['reset']} {colors['white']}{self.powerup_turns_remaining} turns remaining{colors['reset']}")
         else:
-            print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['gray']}Weapon Status:{colors['reset']} {colors['white']}None{colors['reset']}")
+            print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['gray']}Powerup Status:{colors['reset']} {colors['white']}None{colors['reset']}")
         
         # Calculate distances
         distance_to_nearest_coin = self.get_distance_to_nearest_coin()
@@ -691,7 +691,7 @@ class GridWorld:
         if closest_enemy_distance <= 2:
             print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['yellow']}⚠️  WARNING: Enemy nearby!{colors['reset']}")
         if closest_enemy_distance <= 1:
-            if self.has_weapon and self.weapon_turns_remaining > 0:
+            if self.has_powerup and self.powerup_turns_remaining > 0:
                 print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['blue']}⚔️  ATTACK: You can defeat this enemy!{colors['reset']}")
             else:
                 print(f"{colors['cyan']}║{colors['reset']} {colors['bold']}{colors['red']}💥 DANGER: Enemy can catch you!{colors['reset']}")
@@ -723,7 +723,7 @@ def manual_play():
     print(f"{colors['bold']}{colors['cyan']}║{colors['reset']} {colors['white']}W = Up, A = Left, S = Down, D = Right{colors['reset']} {colors['cyan']}║{colors['reset']}")
     print(f"{colors['bold']}{colors['cyan']}║{colors['reset']} {colors['white']}Q = Quit{colors['reset']} {colors['cyan']}║{colors['reset']}")
     print(f"{colors['bold']}{colors['cyan']}║{colors['reset']} {colors['green']}Objective: Collect coins and weapons to defeat enemies!{colors['reset']} {colors['cyan']}║{colors['reset']}")
-    print(f"{colors['bold']}{colors['cyan']}║{colors['reset']} {colors['blue']}Weapons (W): Give you 10 moves to defeat enemies!{colors['reset']} {colors['cyan']}║{colors['reset']}")
+    print(f"{colors['bold']}{colors['cyan']}║{colors['reset']} {colors['blue']}Weapons (P): Give you 10 moves to defeat enemies!{colors['reset']} {colors['cyan']}║{colors['reset']}")
     print(f"{colors['bold']}{colors['cyan']}╚{'═' * 60}╝{colors['reset']}")
     print()
     
@@ -750,13 +750,13 @@ def manual_play():
         
         observation, reward, terminated, truncated, info = env.step(action_code)
         
-        # Show feedback for weapon collection
-        if info.get('weapon_collected', False):
-            print(f"{colors['bold']}{colors['blue']}⚔️  Weapon collected! You can now defeat enemies!{colors['reset']}")
+        # Show feedback for powerup collection
+        if info.get('powerup_collected', False):
+            print(f"{colors['bold']}{colors['blue']}⚔️  Powerup collected! You can now defeat enemies!{colors['reset']}")
         
         # Show feedback for enemy defeat
         if info.get('enemy_died', False):
-            print(f"{colors['bold']}{colors['green']}💀 Enemy defeated! {info.get('weapon_turns_remaining', 0)} weapon turns remaining.{colors['reset']}")
+            print(f"{colors['bold']}{colors['green']}💀 Enemy defeated! {info.get('powerup_turns_remaining', 0)} powerup turns remaining.{colors['reset']}")
         
         if terminated or truncated:
             env.render()
