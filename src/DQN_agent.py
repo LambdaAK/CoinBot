@@ -18,34 +18,23 @@ from typing import List, Tuple, Dict, Any
 import time
 
 class CoinCollectionDQN(nn.Module):
-    """Neural network for coin collection DQN agent"""
+    """Simpler neural network for coin collection DQN agent"""
     
     def __init__(self, state_size: int, action_size: int):
         super(CoinCollectionDQN, self).__init__()
-        
-        # Larger network for more complex coin collection strategy
-        self.fc1 = nn.Linear(state_size, 256)
-        self.fc2 = nn.Linear(256, 256)
-        self.fc3 = nn.Linear(256, 128)
-        self.fc4 = nn.Linear(128, action_size)
-        
-        # Dropout for regularization
-        self.dropout = nn.Dropout(0.2)
+        self.fc1 = nn.Linear(state_size, 64)
+        self.fc2 = nn.Linear(64, action_size)
         
     def forward(self, x):
         x = F.relu(self.fc1(x))
-        x = self.dropout(x)
-        x = F.relu(self.fc2(x))
-        x = self.dropout(x)
-        x = F.relu(self.fc3(x))
-        x = self.fc4(x)
+        x = self.fc2(x)
         return x
 
 class CoinCollectionAgent:
     """DQN agent specialized for coin collection"""
     
     def __init__(self, state_size: int, action_size: int, learning_rate: float = 0.001,
-                 gamma: float = 0.95, epsilon: float = 1.0, epsilon_decay: float = 0.995,
+                 gamma: float = 0.95, epsilon: float = 1.0, epsilon_decay: float = 0.9995,
                  epsilon_min: float = 0.01, memory_size: int = 10000, batch_size: int = 32):
         
         self.state_size = state_size
@@ -489,11 +478,7 @@ def train_coin_collection_agent(episodes: int = None, render_every: int = 1000,
     agent = CoinCollectionAgent(
         state_size=state_size,
         action_size=4,  # 4 actions: up, right, down, left
-        learning_rate=0.001,
-        gamma=0.95,
-        epsilon=1.0,
-        epsilon_decay=0.995,
-        epsilon_min=0.01
+
     )
     
     print(f"🎮 Training Coin Collection Agent with Weapon Powerups")
